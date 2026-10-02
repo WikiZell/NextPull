@@ -9,6 +9,7 @@
 - [History and statistics](History-and-Statistics)
 - [Problems and reports](Problems-and-Reports)
 - [Settings and tray](Settings-and-Tray)
+- [Data and backup](Data-and-Backup)
 - [Troubleshooting and FAQ](Troubleshooting-and-FAQ)
 - [Security and privacy](Security-and-Privacy)
 - [Building and development](Building-and-Development)

@@ -32,7 +32,7 @@ You can also point NextPull to your own `rclone.exe` in **Settings -> rclone -> 
 ## Where NextPull keeps its data
 
 `%LOCALAPPDATA%\NextPull` holds your jobs, settings, the history database, the encrypted login, `app.log` and the per-run logs.
-Uninstalling is deleting the program folder (and, optionally, that data folder).
+Uninstalling is deleting the program folder (and, optionally, that data folder). Details and backup advice: [Data and backup](Data-and-Backup).
 
 ## Make it run all the time
 

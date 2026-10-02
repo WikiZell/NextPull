@@ -22,6 +22,7 @@ catches up when the PC was off, and keeps a history with logs and statistics. It
 | [History and statistics](History-and-Statistics) | Reading runs, per-file results, logs and charts |
 | [Problems and reports](Problems-and-Reports) | The Problems page, the checkup, and how to send a report when something is wrong |
 | [Settings and tray](Settings-and-Tray) | Connection, tray, start with Windows, watchdog |
+| [Data and backup](Data-and-Backup) | Where jobs, history and the login are stored, backing up, moving to another PC |
 | [Troubleshooting and FAQ](Troubleshooting-and-FAQ) | Common errors and their fixes |
 | [Security and privacy](Security-and-Privacy) | Where your login is stored, what is logged, what a report contains |
 | [Building and development](Building-and-Development) | Build the exe, run the tests, project layout |
