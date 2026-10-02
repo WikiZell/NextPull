@@ -1,0 +1,18 @@
+.env
+__pycache__/
+*.py[cod]
+credentials.bin
+
+# Vendored/fetched rclone binary and build output (not versioned)
+tools/rclone/
+dist/
+build/work/
+build/*.ico
+devdata/
+
+# Private deployment notes (hosts, IPs, domains): never publish
+docs/INFRASTRUCTURE.md
+
+.claude/
+.vscode/
+.idea/

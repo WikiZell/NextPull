@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NextPull</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand"><span class="mark">&#8681;</span><span>NextPull<small id="brand-version"></small></span></div>
+    <nav id="nav">
+      <button class="nav active" data-page="dashboard"><span class="ic">&#9673;</span>Dashboard</button>
+      <button class="nav" data-page="jobs"><span class="ic">&#9776;</span>Jobs</button>
+      <button class="nav" data-page="files"><span class="ic">&#128193;</span>Nextcloud files</button>
+      <button class="nav" data-page="history"><span class="ic">&#9202;</span>History</button>
+      <button class="nav" data-page="stats"><span class="ic">&#9636;</span>Statistics</button>
+      <button class="nav" data-page="diagnostics"><span class="ic">&#9888;</span>Problems<span class="count" id="nav-problems" hidden></span></button>
+      <button class="nav" data-page="settings"><span class="ic">&#9881;</span>Settings</button>
+    </nav>
+    <div class="side-foot">
+      <div id="foot-conn"><span class="dot"></span>Not connected</div>
+      <div id="foot-rclone"><span class="dot"></span>rclone</div>
+      <div id="foot-version" class="muted"></div>
+      <div class="credit">Made by Ren&eacute; Girardi</div>
+      <div class="credit">Powered by rclone</div>
+    </div>
+  </aside>
+  <main>
+    <section id="page-dashboard" class="page">
+      <div class="page-head"><div><h1>Dashboard</h1><p>What is downloading now and what runs next.</p></div></div>
+      <div class="stack">
+        <div id="dash-notice"></div>
+        <div class="card" id="dash-now"></div>
+        <div class="grid cols-4" id="dash-tiles"></div>
+        <div class="card"><div class="row between"><h2>Scheduled jobs</h2><button class="btn ghost small" data-goto="jobs">Manage jobs</button></div><div id="dash-jobs"></div></div>
+        <div class="card"><h2>Recent activity</h2><div id="dash-events"></div></div>
+      </div>
+    </section>
+
+    <section id="page-jobs" class="page" hidden>
+      <div class="page-head"><div><h1>Jobs</h1><p>Each job downloads one Nextcloud folder to a folder on this PC on a schedule.</p></div><button class="btn" id="job-new">+ New job</button></div>
+      <div class="stack" id="jobs-list"></div>
+    </section>
+
+    <section id="page-files" class="page" hidden>
+      <div class="page-head"><div><h1>Nextcloud files</h1><p>Browse your Nextcloud folders. Nothing is downloaded or deleted from here.</p></div><button class="btn" id="files-make-job">Create job from this folder</button></div>
+      <div class="card stack"><div class="crumbs" id="files-crumbs"></div><div class="list" id="files-list"></div></div>
+    </section>
+
+    <section id="page-history" class="page" hidden>
+      <div class="page-head"><div><h1>History</h1><p>Every run, including missed and skipped ones.</p></div><label style="min-width:200px">Job<select id="history-job"></select></label></div>
+      <div class="card"><div id="history-table"></div></div>
+    </section>
+
+    <section id="page-stats" class="page" hidden>
+      <div class="page-head"><div><h1>Statistics</h1><p>Volume, speed and reliability.</p></div><div class="seg" id="stats-range"><button data-days="7">7 days</button><button data-days="30" class="on">30 days</button><button data-days="90">90 days</button><button data-days="365">1 year</button></div></div>
+      <div class="stack" id="stats-body"></div>
+    </section>
+
+    <section id="page-diagnostics" class="page" hidden>
+      <div class="page-head"><div><h1>Problems</h1><p>What went wrong, what to do about it, and how to send a report if you need help.</p></div><button class="btn" id="dg-test">Run checkup</button></div>
+      <div class="stack" id="dg-body"></div>
+    </section>
+
+    <section id="page-settings" class="page" hidden>
+      <div class="page-head"><div><h1>Settings</h1><p>Connection, behaviour and maintenance.</p></div></div>
+      <div class="stack" id="settings-body"></div>
+    </section>
+  </main>
+</div>
+<div id="modals"></div>
+<div class="toasts" id="toasts"></div>
+<script src="app.js"></script>
+</body>
+</html>
