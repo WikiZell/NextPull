@@ -28,7 +28,7 @@ from rclone_runner import RcloneError, find_rclone, rclone_version
 from scheduler import describe_schedule
 from store import ConfigStore, HistoryDb, SecretStore, new_job_id
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 APP_NAME = "NextPull"
 DATA_DIR = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local") / APP_NAME
 LOGIN_TIMEOUT = 20 * 60
@@ -84,7 +84,13 @@ class NextPullApi:
         if not creds:
             raise NextcloudError("Not connected to Nextcloud. Open Settings and connect.")
         applog.register_secret(creds["app_password"])
-        return NextcloudSession(creds["server"], creds["user"], creds["app_password"])
+        return NextcloudSession(creds["server"], creds["user"], creds["app_password"], uid=creds.get("uid"))
+
+    def _remember_uid(self, session: NextcloudSession) -> None:
+        """Keep the user id the session found (older saved logins do not have it) so later calls skip the lookup."""
+        creds = self._secrets.load()
+        if creds and session.uid and creds.get("uid") != session.uid:
+            self._secrets.save(creds["server"], creds["user"], creds["app_password"], session.uid)
 
     def _connection(self) -> dict[str, Any]:
         creds = self._secrets.load()
@@ -169,7 +175,10 @@ class NextPullApi:
                 self._secrets.save(creds["server"], creds["user"], creds["app_password"])
                 _log.info("connected to %s as %s", creds["server"], creds["user"])
                 try:
-                    self._user_cache = NextcloudSession(**{"server": creds["server"], "user": creds["user"], "app_password": creds["app_password"]}).user_info()
+                    session = NextcloudSession(creds["server"], creds["user"], creds["app_password"])
+                    self._user_cache = session.user_info()
+                    session.uid = self._user_cache.get("id") or None
+                    self._remember_uid(session)
                 except NextcloudError:
                     self._user_cache = None
                 self._login = {"state": "connected", "message": "Connected"}
@@ -203,7 +212,9 @@ class NextPullApi:
     # -------------------------------------------------------------------------------------------------- browsing
     @safe
     def browse(self, path: str = "") -> dict[str, Any]:
-        entries = [entry.to_dict() for entry in self._session().list_dir(path)]
+        session = self._session()
+        entries = [entry.to_dict() for entry in session.list_dir(path)]
+        self._remember_uid(session)
         clean = "/".join(part for part in str(path).replace("\\", "/").split("/") if part)
         parent = clean.rsplit("/", 1)[0] if "/" in clean else ""
         return {"ok": True, "path": clean, "parent": parent if clean else None, "entries": entries}

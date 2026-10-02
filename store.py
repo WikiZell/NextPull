@@ -261,8 +261,11 @@ class SecretStore:
         import winutil
         return winutil.dpapi_protect, winutil.dpapi_unprotect
 
-    def save(self, server: str, user: str, app_password: str) -> None:
+    def save(self, server: str, user: str, app_password: str, uid: str = "") -> None:
+        """``user`` is the login name; ``uid`` is Nextcloud's user id (differs when signing in with an e-mail address)."""
         data = {"server": server, "user": user, "app_password": app_password}
+        if uid:
+            data["uid"] = uid
         with self._lock:
             self._memory = data
             if self.data_dir:

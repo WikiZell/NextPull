@@ -151,7 +151,7 @@ def build_env(creds: dict[str, str], obscured: str, base: dict[str, str] | None 
     env = {key: value for key, value in (base if base is not None else os.environ).items() if not key.upper().startswith("RCLONE_")}
     env.update({
         f"RCLONE_CONFIG_{REMOTE}_TYPE": "webdav",
-        f"RCLONE_CONFIG_{REMOTE}_URL": dav_files_url(creds["server"], creds["user"]),
+        f"RCLONE_CONFIG_{REMOTE}_URL": dav_files_url(creds["server"], creds.get("uid") or creds["user"]),
         f"RCLONE_CONFIG_{REMOTE}_VENDOR": "nextcloud",
         f"RCLONE_CONFIG_{REMOTE}_USER": creds["user"],
         f"RCLONE_CONFIG_{REMOTE}_PASS": obscured,
@@ -290,7 +290,7 @@ class RcloneRun:
         a helper thread so **Cancel works even while the server hangs**."""
         if not self.precheck:
             return None
-        session = NextcloudSession(self.creds["server"], self.creds["user"], self.creds["app_password"], timeout=30)
+        session = NextcloudSession(self.creds["server"], self.creds["user"], self.creds["app_password"], timeout=30, uid=self.creds.get("uid"))
         last = ""
         for attempt in range(1, self.PRECHECK_ATTEMPTS + 1):
             box: dict[str, Any] = {}
@@ -311,6 +311,8 @@ class RcloneRun:
                 worker.join(timeout=0.2)
             if "is_dir" in box:
                 self._source_is_dir = box["is_dir"]
+                if session.uid:   # the WebDAV path needs the user id, which is not the login name when someone signed in with an e-mail address
+                    self.creds = {**self.creds, "uid": session.uid}
                 return None
             error = box["error"]
             last = str(error)

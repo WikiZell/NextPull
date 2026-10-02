@@ -160,8 +160,23 @@ def parse_propfind(xml_bytes: bytes, base_path: str) -> list[Entry]:
 
 
 class NextcloudSession:
-    def __init__(self, server: str, user: str, app_password: str, timeout: float = 30.0) -> None:
+    def __init__(self, server: str, user: str, app_password: str, timeout: float = 30.0, uid: str | None = None) -> None:
+        # ``user`` is the *login name* (what was typed at sign-in: a user name or an e-mail address) and goes into the Basic auth.
+        # ``uid`` is Nextcloud's internal user id, which is what the WebDAV path needs. They differ when someone signs in with an
+        # e-mail address; they are the same for a plain user name.
         self.server, self.user, self.password, self.timeout = normalize_server_url(server), user, app_password, timeout
+        self.uid = uid or None
+
+    def files_user(self) -> str:
+        """The id to use in ``/remote.php/dav/files/<id>``: asked from Nextcloud once, remembered. Falls back to the login name
+        only if the server will not say (then a plain user name still works). A rejected login raises."""
+        if not self.uid:
+            try:
+                self.uid = self.user_info().get("id") or None
+            except NextcloudError as error:
+                if "rejected the saved login" in str(error):
+                    raise
+        return self.uid or self.user
 
     @property
     def _auth(self) -> dict[str, str]:
@@ -169,7 +184,7 @@ class NextcloudSession:
 
     @property
     def files_url(self) -> str:
-        return dav_files_url(self.server, self.user)
+        return dav_files_url(self.server, self.files_user())
 
     def list_dir(self, path: str = "") -> list[Entry]:
         """Children of ``path`` (relative to the Files root), folders first then by name. Raises NextcloudError."""
@@ -226,7 +241,7 @@ class NextcloudSession:
         except (ValueError, KeyError, TypeError) as error:
             raise NextcloudError("Unexpected answer from Nextcloud") from error
         quota = data.get("quota") if isinstance(data.get("quota"), dict) else {}
-        return {"display_name": data.get("display-name") or data.get("displayname") or self.user, "email": data.get("email") or "",
+        return {"id": str(data.get("id") or ""), "display_name": data.get("display-name") or data.get("displayname") or self.user, "email": data.get("email") or "",
                 "quota_used": quota.get("used"), "quota_total": quota.get("total") if isinstance(quota.get("total"), int) and quota.get("total", 0) > 0 else None}
 
     def revoke(self) -> bool:

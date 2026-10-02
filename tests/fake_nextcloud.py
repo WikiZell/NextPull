@@ -47,8 +47,10 @@ def dec(name: str) -> str:
 
 
 class FakeNextcloud:
-    def __init__(self, root: Path, user: str = "alice", password: str = "app-pass-1234") -> None:
+    def __init__(self, root: Path, user: str = "alice", password: str = "app-pass-1234", login: str | None = None) -> None:
+        # ``user`` is the Nextcloud user id (used in the WebDAV path); ``login`` is what the person typed at sign-in (auth + loginName), e.g. an e-mail address
         self.root, self.user, self.password = Path(root), user, password
+        self.login = login or user
         self.requests: list[tuple[str, str]] = []
         self.revoked = False
         self.approved = threading.Event()
@@ -132,7 +134,7 @@ class FakeNextcloud:
                     self.wfile.write(body)
 
             def _authorized(self) -> bool:
-                expected = "Basic " + base64.b64encode(f"{outer.user}:{outer.password}".encode()).decode()
+                expected = "Basic " + base64.b64encode(f"{outer.login}:{outer.password}".encode()).decode()
                 return self.headers.get("Authorization") == expected
 
             def _local(self, url_path: str) -> Path | None:
@@ -169,7 +171,7 @@ class FakeNextcloud:
                 if self.path == "/index.php/login/v2/poll":
                     if urllib.parse.parse_qs(body.decode()).get("token") != ["T0KEN"] or not outer.approved.is_set():
                         return self._send(404)
-                    data = {"server": outer.base, "loginName": outer.user, "appPassword": outer.password}
+                    data = {"server": outer.base, "loginName": outer.login, "appPassword": outer.password}
                     return self._send(200, json.dumps(data).encode(), {"Content-Type": "application/json"})
                 self._send(404)
 

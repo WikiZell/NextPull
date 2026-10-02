@@ -43,6 +43,12 @@ Folder `size` for directories is Nextcloud's recursive `oc:size`. Paths are rela
   `root:root 0644` fail with `403` on `DELETE`. See OPERATIONS.md.
 * Deleted files go to the user's **Nextcloud trash** (a copy on the server's system disk); empty it regularly (`occ trashbin:cleanup <user>`) if the volume is big.
 
+## Login name vs user id
+
+The sign-in returns the **login name** (what was typed: a user name or an e-mail address). WebDAV paths use the **user id** (`/remote.php/dav/files/<id>/`), which is different
+when the login was an e-mail address. NextPull authenticates with the login name, asks `ocs/v2.php/cloud/user` for the `id`, stores it with the login (`uid`) and uses it for the
+WebDAV URL (browsing, pre-check and rclone). `NextcloudSession.files_user()` does the lookup lazily, so logins saved by an earlier version work too.
+
 ## Cloudflare note
 
 If the Nextcloud hostname is proxied by Cloudflare (orange cloud), big transfers go through Cloudflare. The free-plan terms restrict

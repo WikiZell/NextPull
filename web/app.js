@@ -222,7 +222,7 @@ function openEditor(job, presetSource = "") {
   const overlay = modal(`<div class="modal-head"><h2>${isNew ? "New job" : "Edit job"}</h2><button class="close" data-close>&times;</button></div>
   <div class="form">
     <label>Name<input id="je-name" value="${esc(job.name)}" placeholder="Night pull" maxlength="60"></label>
-    <label>Nextcloud folder to download<div class="row" style="flex-wrap:nowrap"><input id="je-source" value="${esc(job.source)}" placeholder="e.g. Shared/EXTRACTED"><button class="btn ghost" id="je-browse" type="button">Browse Nextcloud...</button></div></label>
+    <label>Nextcloud folder to download<div class="row" style="flex-wrap:nowrap"><input id="je-source" value="${esc(job.source)}" placeholder="e.g. Documents/Photos"><button class="btn ghost" id="je-browse" type="button">Browse Nextcloud...</button></div></label>
     <label>Destination folder on this PC<div class="row" style="flex-wrap:nowrap"><input id="je-dest" value="${esc(job.dest)}" placeholder="D:\\Downloads\\Nextcloud"><button class="btn ghost" id="je-pick" type="button">Choose...</button></div><small id="je-destinfo"></small></label>
     <div><h3>What to do with the files</h3><div class="seg" id="je-mode"><button type="button" data-mode="copy" class="${job.mode === "copy" ? "on" : ""}">Copy (keep on Nextcloud)</button><button type="button" data-mode="move" class="${job.mode === "move" ? "on" : ""}">Move (delete on Nextcloud after a verified download)</button></div></div>
     <div><h3>When</h3><div class="chips" id="je-days">${DAYS.map((d, i) => `<button type="button" class="chip ${job.schedule.days.includes(i) ? "on" : ""}" data-day="${i}">${d}</button>`).join("")}</div></div>

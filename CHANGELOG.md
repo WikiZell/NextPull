@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.1 - 2026-10-02
+
+### Fixed
+- **Signing in with an e-mail address** made every folder "not found": the e-mail login name was used in the WebDAV path, which needs Nextcloud's user id. The id is now looked up
+  (OCS `cloud/user`), saved with the login, and used for the path; the login name is still used for authentication. Older saved logins are upgraded on first use.
+- Placeholders in the job editor are generic (`Documents/Photos`).
+
 ## 0.1.0 - first working version (2026-10-02)
 
 ### Added

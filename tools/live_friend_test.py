@@ -51,7 +51,8 @@ if not check("sign-in through the app (Login Flow v2)", conn.get("connected"), f
 creds = api._secrets.load()
 check("credentials stored encrypted on disk (DPAPI file, no plain password)", (DATA / "credentials.bin").is_file() and creds["app_password"].encode() not in (DATA / "credentials.bin").read_bytes())
 auth = "Basic " + base64.b64encode(f"{creds['user']}:{creds['app_password']}".encode()).decode()
-BASE = f"{creds['server']}/remote.php/dav/files/{urllib.parse.quote(creds['user'])}"
+UID = creds.get('uid') or creds['user']   # the WebDAV path needs the user id, not an e-mail login name
+BASE = f"{creds['server']}/remote.php/dav/files/{urllib.parse.quote(UID, safe='')}"
 
 
 def dav(method, path, data=None, headers=None, base=None):
@@ -216,7 +217,7 @@ except Exception as error:
 # ------------------------------------------------------------------------- 10. clean up Nextcloud, then disconnect
 dav("DELETE", PREFIX)
 gone = dav("PROPFIND", PREFIX, b"", {"Depth": "0"})[0] == 404
-trash_base = f"{creds['server']}/remote.php/dav/trashbin/{urllib.parse.quote(creds['user'])}/trash"
+trash_base = f"{creds['server']}/remote.php/dav/trashbin/{urllib.parse.quote(UID, safe='')}/trash"
 body = b'<?xml version="1.0"?><d:propfind xmlns:d="DAV:" xmlns:nc="http://nextcloud.org/ns"><d:prop><nc:trashbin-original-location/></d:prop></d:propfind>'
 removed = 0
 try:

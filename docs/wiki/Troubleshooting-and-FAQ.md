@@ -17,6 +17,10 @@ Start with the **Problems** page and press **Run checkup**. If that does not sol
 | "Cannot use the destination folder" | The drive is not connected or the folder is not writable | Check the path and permissions |
 | Disk full | The destination has no free space | Free space or change the destination |
 
+## Signing in with an e-mail address
+
+You can sign in to Nextcloud with a user name or with your e-mail address; NextPull handles both. (Version 0.1.0 reported "folder not found" for e-mail logins: update to 0.1.1 or later and, if needed, disconnect and connect again.)
+
 ## FAQ
 
 **Does it need anything on the Nextcloud server?** No. It uses the normal WebDAV access that every Nextcloud has.
