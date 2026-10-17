@@ -83,7 +83,14 @@ function show(page) {
   document.querySelectorAll(".nav").forEach(el => el.classList.toggle("active", el.dataset.page === page));
   ({dashboard: loadDashboard, jobs: loadJobs, files: loadFiles, history: loadHistory, stats: loadStats, diagnostics: loadDiagnostics, settings: loadSettings})[page]();
 }
-document.addEventListener("click", event => {
+document.addEventListener("click", async event => {
+  const upd = event.target.closest("[data-update]");
+  if (upd) {
+    event.preventDefault();
+    if (upd.dataset.update === "page") call("open_release_page");
+    if (upd.dataset.update === "skip" && S.status && S.status.update) { await call("skip_update", S.status.update.version); S.sig.notice = null; poll(); }
+    return;
+  }
   const nav = event.target.closest("[data-page]");
   if (nav) show(nav.dataset.page);
   const go = event.target.closest("[data-goto]");
@@ -131,6 +138,7 @@ function updateDashboard() {
   const notices = [];
   if (!status.connected) notices.push(`<div class="notice bad">Not connected to Nextcloud. <a href="#" data-goto="settings">Open Settings to connect</a>.</div>`);
   if (!status.rclone_found) notices.push(`<div class="notice bad">rclone was not found. Put <b>rclone.exe</b> in the <b>tools\\rclone</b> folder next to NextPull, or set its path in Settings.</div>`);
+  if (status.update) notices.push(`<div class="notice info">NextPull <b>${esc(status.update.version)}</b> is available (you have ${esc((S.boot.app || {}).version)}). <a href="#" data-update="page">What is new</a> - <a href="#" data-update="skip">Skip this version</a></div>`);
   if (status.problem_count) notices.push(`<div class="notice">${status.problem_count} recent run(s) had problems. <a href="#" data-goto="diagnostics">See what went wrong</a>.</div>`);
   if (!S.jobs.length) notices.push(`<div class="notice info">No jobs yet. <a href="#" data-goto="jobs">Create your first job</a>.</div>`);
   const noticeHtml = notices.join("");
@@ -377,8 +385,8 @@ $("stats-range").addEventListener("click", event => {
 
 // ------------------------------------------------------------------------------------------------- settings
 async function loadSettings() {
-  const [boot, s] = await Promise.all([api.bootstrap(), api.get_settings()]);
-  S.boot = boot; S.settings = s.settings || {};
+  const [boot, s, upd] = await Promise.all([api.bootstrap(), api.get_settings(), api.update_info()]);
+  S.boot = boot; S.settings = s.settings || {}; S.upd = upd;
   const c = boot.connection || {}, st = S.settings;
   const login = S.login || {state: "idle"};
   const connection = c.connected ? `<div class="stack"><div><b>${esc(c.display_name || c.user)}</b> <span class="muted">(${esc(c.user)}) on ${esc(c.server)}</span></div>
@@ -399,16 +407,27 @@ async function loadSettings() {
     <div class="card stack"><h2>Data</h2><div class="cols form"><div class="form" style="grid-template-columns:1fr 1fr;display:grid"><label>Keep history (days)<input id="st-hdays" type="number" min="7" value="${st.history_days}"></label><label>Keep log files (days)<input id="st-ldays" type="number" min="1" value="${st.log_days}"></label></div></div>
       <div class="hint mono">${esc(boot.data_dir)}</div>
       <div class="row"><button class="btn ghost" id="st-logs">Open logs folder</button><button class="btn ghost" id="st-export">Export jobs</button><button class="btn ghost" id="st-import">Import jobs</button><button class="btn danger" id="st-clear">Clear history</button></div></div>
+    <div class="card stack"><h2>Updates</h2><div id="st-upd">${updateHtml(S.upd)}</div>
+      ${toggle("st-updates", "Check for updates automatically", "Asks GitHub for the latest NextPull release about every 6 hours. Nothing else is sent. NextPull never installs anything without you clicking.", st.check_updates)}
+      <div class="row"><button class="btn ghost" id="st-upcheck">Check now</button></div></div>
     <div class="card"><h2>About</h2><p class="muted">NextPull <b>version ${esc((boot.app || {}).version)}</b> - scheduled Nextcloud downloads with rclone.</p><p class="muted">Made by René Girardi. Downloads are done by <a href="https://rclone.org" target="_blank" rel="noopener">rclone</a> (MIT license, © Nick Craig-Wood and contributors). NextPull is an independent project, not affiliated with rclone or Nextcloud.</p></div>`;
   wireSettings();
+}
+function updateHtml(u) {
+  if (!u) return "";
+  const when = u.checked ? `Last checked ${fmtTime(u.checked)}.` : "Not checked yet.";
+  const state = u.error ? `<div class="notice">${esc(u.error)}</div>`
+    : u.available ? `<div class="notice info">Version <b>${esc(u.latest.version)}</b> is available. <a href="#" data-update="page">What is new</a></div>`
+    : u.latest ? '<span class="badge ok">Up to date</span>' : "";
+  return `<div>You have version <b>${esc(u.current)}</b>. ${when}</div>${state}`;
 }
 function wireSettings() {
   const on = (id, fn, evt = "click") => { const el = $(id); if (el) el.addEventListener(evt, fn); };
   const save = async () => {
-    const r = await call("save_settings", {close_to_tray: $("st-tray").checked, notifications: $("st-notify").checked, prevent_sleep: $("st-sleep").checked, rclone_path: $("st-rpath").value, history_days: Number($("st-hdays").value), log_days: Number($("st-ldays").value)});
+    const r = await call("save_settings", {close_to_tray: $("st-tray").checked, notifications: $("st-notify").checked, prevent_sleep: $("st-sleep").checked, rclone_path: $("st-rpath").value, history_days: Number($("st-hdays").value), log_days: Number($("st-ldays").value), check_updates: $("st-updates").checked});
     if (r.ok) S.settings = r.settings;
   };
-  ["st-tray", "st-notify", "st-sleep", "st-hdays", "st-ldays"].forEach(id => on(id, save, "change"));
+  ["st-tray", "st-notify", "st-sleep", "st-hdays", "st-ldays", "st-updates"].forEach(id => on(id, save, "change"));
   on("st-rpath", async () => { await save(); loadSettings(); }, "change");
   on("st-rcheck", async () => { await save(); loadSettings(); });
   on("st-autostart", async () => { const r = await call("set_autostart", $("st-autostart").checked); if (!r.ok) $("st-autostart").checked = !$("st-autostart").checked; }, "change");
@@ -417,6 +436,7 @@ function wireSettings() {
   on("st-cancel-login", async () => { await call("connect_cancel"); S.login = {state: "cancelled", message: "Sign-in cancelled"}; loadSettings(); });
   on("st-check", async () => { const r = await call("connection", true); if (r.ok) { toast("Connection is working", "ok"); loadSettings(); } });
   on("st-disconnect", async () => { if (!await ask("Disconnect from Nextcloud? Scheduled jobs will fail until you connect again.", "Disconnect", true)) return; const r = await call("disconnect", $("st-revoke").checked); if (r.ok) { S.login = null; toast(r.revoked ? "Disconnected and access removed on the server" : "Disconnected", "ok"); loadSettings(); } });
+  on("st-upcheck", async () => { const b = $("st-upcheck"); b.disabled = true; b.textContent = "Checking..."; const r = await call("check_update"); b.disabled = false; b.textContent = "Check now"; if (r.ok) { S.upd = r; $("st-upd").innerHTML = updateHtml(r); if (r.available) toast(`Version ${r.latest.version} is available`, "ok"); else if (!r.error) toast("You have the latest version", "ok"); } });
   on("st-logs", () => call("open_logs"));
   on("st-clear", async () => { if (await ask("Delete the whole run history?", "Delete", true)) { await call("clear_history"); toast("History cleared", "ok"); } });
   on("st-export", async () => { const r = await call("export_jobs"); if (r.ok) modal(`<div class="modal-head"><h2>Export jobs</h2><button class="close" data-close>&times;</button></div><p class="muted">Copy this text. It contains no passwords.</p><textarea style="min-height:260px" class="mono" readonly>${esc(r.text)}</textarea>`); });

@@ -133,7 +133,7 @@ def clean_job(raw: Any) -> dict[str, Any]:
 
 
 def default_settings() -> dict[str, Any]:
-    return {"notifications": True, "close_to_tray": True, "prevent_sleep": True, "rclone_path": "", "history_days": 365, "log_days": 90}
+    return {"notifications": True, "close_to_tray": True, "prevent_sleep": True, "rclone_path": "", "history_days": 365, "log_days": 90, "check_updates": True}
 
 
 def clean_settings(raw: Any) -> dict[str, Any]:
@@ -146,6 +146,7 @@ def clean_settings(raw: Any) -> dict[str, Any]:
         "rclone_path": str(raw.get("rclone_path") or "").strip()[:500],
         "history_days": _int(raw.get("history_days"), 7, 3650, base["history_days"]),
         "log_days": _int(raw.get("log_days"), 1, 3650, base["log_days"]),
+        "check_updates": bool(raw.get("check_updates", base["check_updates"])),
     }
 
 

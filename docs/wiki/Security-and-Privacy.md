@@ -17,7 +17,7 @@ See [Problems and reports](Problems-and-Reports). No passwords or tokens, ever; 
 
 ## Network
 
-NextPull talks only to **your Nextcloud server** (WebDAV / OCS over HTTPS if your server uses it) and, for the one-time setup, to `downloads.rclone.org` if you use `tools\Fetch-rclone.ps1`. There is no telemetry, no update check and no account.
+NextPull talks only to **your Nextcloud server** (WebDAV / OCS over HTTPS if your server uses it) and, for the one-time setup, to `downloads.rclone.org` if you use `tools\Fetch-rclone.ps1`. There is no telemetry and no account. The only other request is the optional **update check**: about every 6 hours NextPull asks `api.github.com` for the latest NextPull release (a public request that sends nothing but a User-Agent). You can switch it off in *Settings -> Updates*. See [Updates](Updates).
 
 ## Safe by design
 

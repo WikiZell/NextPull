@@ -14,6 +14,7 @@ A job with **Always dry run** ticked changes nothing, neither on Nextcloud nor o
 ## Guarantees
 
 - **Nothing is overwritten**: downloads are written to a `.partial` file and renamed when complete.
+- **The job's own folder is never removed.** In Move mode, folders that were emptied *inside* the job's Nextcloud folder are removed (switch off "Remove empty folders on Nextcloud after a move" to keep them), but the folder you picked for the job always stays, even when it is empty.
 - **Interrupted runs resume** on the next run; half-written files are never presented as finished.
 - **Name clashes are skipped, not merged.** Windows is case-insensitive and cannot hold some names that Nextcloud can (for example two files that differ only by upper/lower case, or names with forbidden characters). NextPull checks the names before the run and skips the clashing ones (all of them), recording each as *Skipped* with the reason. In Move mode, nothing is deleted for a skipped file.
 - **The pre-check**: before rclone starts, NextPull checks that the Nextcloud folder exists and the login works, and gives a plain-language message if not.

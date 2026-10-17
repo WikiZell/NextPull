@@ -62,9 +62,18 @@ class RealRclone(TempCase):
         self.assertEqual(result["state"], "ok", result)
         self.assertFalse((self.src / "a.mkv").exists())
         self.assertFalse((self.src / "Sub").exists())
+        self.assertTrue(self.src.is_dir(), "the job's own folder must never be removed, even when it ends up empty")
         run = self.history.get_run(result["run_id"])
         self.assertEqual((run["files"], run["deleted"]), (2, 2))
         self.assertTrue((self.dest / "Sub" / "b.mkv").exists())
+
+    def test_move_keeps_the_job_folder_when_the_source_is_a_sub_folder_too(self) -> None:
+        write_file(self.src / "Series" / "Season 1" / "e1.mkv", 100)
+        result = self.make_run(mode="move", source="EXTRACTED/Series").run()
+        self.assertEqual(result["state"], "ok", result)
+        self.assertTrue((self.src / "Series").is_dir())         # the root of the job survives
+        self.assertFalse((self.src / "Series" / "Season 1").exists())   # emptied sub-folders go
+        self.assertTrue(self.src.is_dir())
 
     def test_a_403_on_delete_is_reported_and_the_file_is_still_downloaded(self) -> None:
         write_file(self.src / "good.mkv", 100)

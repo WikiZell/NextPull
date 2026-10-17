@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Safety
+- Pinned with real-rclone tests: a Move never removes the job's own Nextcloud folder (only emptied sub-folders). Hard rule 18 in AGENTS.md.
+
+### Added
+- **Update check**: asks GitHub Releases for a newer version (at start and every 6 hours, switch in Settings -> Updates), shows a banner and a notification (once per version),
+  *Check now*, *Skip this version*. Only offers published, non-pre-release versions; links must be HTTPS on GitHub. `updates.py`, `tests/test_updates.py`.
+- `save_settings` now merges with the current settings, so a partial save cannot reset other options.
+
 ## 0.1.1 - 2026-10-02
 
 ### Fixed

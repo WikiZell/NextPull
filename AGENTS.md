@@ -85,6 +85,8 @@ Keep these; add a test when you touch the code that enforces them.
 14. **Pre-check** the server (`check_folder`) before rclone; failures are plain-language messages. Keep `RcloneRun.PRECHECK_*` and the cancel-responsive helper thread.
 15. **History stays honest**: one row per file, delete failures are a note on a downloaded file, `present` for already-downloaded files, never show `.partial` temp names.
 16. **Release rclone's pipes** after each run (the ResourceWarning-clean test run guards this).
+18. **Move never removes the job's own source folder**: rclone's `--delete-empty-src-dirs` only removes emptied *sub*-folders; the root of the job stays, even when empty
+    (pinned against the real rclone in `tests/test_real_rclone.py`). Never add a code path that deletes the source root.
 17. **Logs and reports never contain secrets**: log through `applog.get_logger(...)` only (the redacting filter sits on the handlers; a filter on the
     logger would not cover child loggers), call `applog.register_secret` for every new secret (app password, rc password), never `print` request data,
     and keep `tests/test_diagnostics.py` passing. A report hides file/folder/account names unless the user ticks the box. Bridge `@safe` logs every failure;

@@ -10,6 +10,7 @@
 - [Problems and reports](Problems-and-Reports)
 - [Settings and tray](Settings-and-Tray)
 - [Data and backup](Data-and-Backup)
+- [Updates](Updates)
 - [Troubleshooting and FAQ](Troubleshooting-and-FAQ)
 - [Security and privacy](Security-and-Privacy)
 - [Building and development](Building-and-Development)

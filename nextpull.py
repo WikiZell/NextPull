@@ -21,6 +21,7 @@ from typing import Any, Callable
 
 import applog
 import diagnostics
+import updates
 import winutil
 from engine import Engine
 from nc_client import LoginFlow, NextcloudError, NextcloudSession, normalize_server_url
@@ -35,6 +36,8 @@ LOGIN_TIMEOUT = 20 * 60
 _log = applog.get_logger("app")
 _ui_log = applog.get_logger("ui")
 MAX_UI_ERRORS = 60   # a broken page must not flood the log
+UPDATE_FIRST_DELAY = 20.0       # seconds after start before the first update check
+UPDATE_INTERVAL = 6 * 3600.0    # then every 6 hours (only while "check for updates" is on)
 
 
 def safe(method: Callable[..., dict[str, Any]]) -> Callable[..., dict[str, Any]]:
@@ -69,6 +72,10 @@ class NextPullApi:
         self._login_cancel = threading.Event()
         self._user_cache: dict[str, Any] | None = None
         self._ui_errors = 0
+        self._update_url = updates.API_URL
+        self._update_delay = UPDATE_FIRST_DELAY
+        self._update_stop = threading.Event()
+        self._update: dict[str, Any] = {"checked": "", "error": "", "latest": None}
         self._last_self_test: list[dict[str, str]] | None = None
         saved = self._secrets.load()
         if saved:
@@ -106,9 +113,77 @@ class NextPullApi:
 
     def start_engine(self) -> None:
         self._engine.start()
+        self._update_stop.clear()
+        threading.Thread(target=self._update_loop, name="nextpull-update-check", daemon=True).start()
+
+    # ------------------------------------------------------------------------------------------------ updates
+    def _update_loop(self) -> None:
+        wait = self._update_delay
+        while not self._update_stop.wait(wait):
+            wait = UPDATE_INTERVAL
+            if self._config.settings()["check_updates"]:
+                self._check_update()
+
+    def _check_update(self) -> None:
+        """One check. Never raises; remembers the result for the banner and tells the user (once per version) through a notification."""
+        previous = self._update.get("error", "")
+        try:
+            latest = updates.latest_release(self._update_url)
+            self._update = {"checked": datetime.now().isoformat(timespec="seconds"), "error": "", "latest": latest}
+        except updates.UpdateError as error:
+            self._update = {**self._update, "checked": datetime.now().isoformat(timespec="seconds"), "error": str(error)}
+            if str(error) != previous:
+                _log.warning("update check failed: %s", error)
+            return
+        except Exception:   # noqa: BLE001 - a background check must never take the app down
+            _log.exception("update check crashed")
+            return
+        if latest and updates.is_newer(latest["version"], __version__):
+            _log.info("update available: %s (running %s)", latest["version"], __version__)
+            if self._config.state("update_notified") != latest["version"] and self._config.settings()["notifications"] and self._engine.notify:
+                self._config.set_state("update_notified", latest["version"])
+                try:
+                    self._engine.notify("NextPull update", f"Version {latest['version']} is available")
+                except Exception:   # noqa: BLE001
+                    _log.warning("could not show the update notification", exc_info=True)
+
+    def _update_view(self) -> dict[str, Any]:
+        latest = self._update.get("latest")
+        available = bool(latest and updates.is_newer(latest["version"], __version__))
+        skipped = bool(available and self._config.state("update_skipped") == latest["version"])
+        asset = (latest or {}).get("asset")
+        return {"ok": True, "enabled": self._config.settings()["check_updates"], "current": __version__, "available": available, "skipped": skipped, "checked": self._update.get("checked", ""),
+                "error": self._update.get("error", ""), "latest": {"version": latest["version"], "name": latest["name"], "notes": latest["notes"], "page": latest["page"], "published": latest["published"],
+                                                                       "size": (asset or {}).get("size", 0), "installable": bool(asset)} if latest else None}
+
+    @safe
+    def check_update(self) -> dict[str, Any]:
+        """Check now (the Settings button). Works even when the automatic check is switched off."""
+        self._check_update()
+        return self._update_view()
+
+    @safe
+    def update_info(self) -> dict[str, Any]:
+        """What the last check found, without asking GitHub again."""
+        return self._update_view()
+
+    @safe
+    def skip_update(self, version: str) -> dict[str, Any]:
+        """Hide the banner for this version (a newer one shows it again)."""
+        self._config.set_state("update_skipped", str(version))
+        return self._update_view()
+
+    @safe
+    def open_release_page(self) -> dict[str, Any]:
+        page = (self._update.get("latest") or {}).get("page")
+        if not page or not updates.trusted_url(page):
+            return {"ok": False, "error": "No release page to open"}
+        webbrowser.open(page)
+        return {"ok": True}
 
     def shutdown(self) -> None:
         _log.info("NextPull shutting down")
+        self._update_stop.set()
         self._engine.stop()
         self._history.close()
         applog.teardown_logging()
@@ -137,6 +212,8 @@ class NextPullApi:
         status["connected"] = self._secrets.connected()
         status["rclone_found"] = self._find_rclone() is not None
         status["events"] = self._engine.events()[:25]
+        view = self._update_view()
+        status["update"] = {"version": view["latest"]["version"], "installable": view["latest"]["installable"]} if view["enabled"] and view["available"] and not view["skipped"] else None
         status["problem_count"] = diagnostics.unseen_problem_count(self._history.list_runs(40), self._config.state("problems_seen", ""))
         return status
 
@@ -300,7 +377,7 @@ class NextPullApi:
 
     @safe
     def save_settings(self, settings: dict[str, Any]) -> dict[str, Any]:
-        return {"ok": True, "settings": self._config.save_settings(settings)}
+        return {"ok": True, "settings": self._config.save_settings({**self._config.settings(), **(settings if isinstance(settings, dict) else {})})}
 
     @safe
     def check_rclone(self, path: str = "") -> dict[str, Any]:
