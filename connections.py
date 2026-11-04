@@ -11,14 +11,13 @@ rest of the app needs (a session for browsing, the rclone remote, a public view 
 from __future__ import annotations
 
 import base64
-import ipaddress
 import json
 import re
 import urllib.parse
 import uuid
 from typing import Any
 
-from nc_client import NextcloudError, NextcloudSession, WebdavSession, _request
+from nc_client import NextcloudError, NextcloudSession, WebdavSession, _request, is_private_host  # noqa: F401  (is_private_host re-exported)
 
 NEXTCLOUD_ID = "nextcloud"
 SFTPGO = "sftpgo"
@@ -28,20 +27,6 @@ _HEADER_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]{0,63}$")
 
 
 # ---------------------------------------------------------------------------------------------------- addresses
-
-def is_private_host(host: str) -> bool:
-    """True for addresses that never leave the local network (so plain http is acceptable there)."""
-    host = (host or "").strip("[]").lower()
-    if not host:
-        return False
-    if host == "localhost" or host.endswith((".local", ".lan", ".home.arpa", ".internal")) or "." not in host and ":" not in host:
-        return True
-    try:
-        ip = ipaddress.ip_address(host)
-    except ValueError:
-        return False
-    return ip.is_private or ip.is_loopback or ip.is_link_local
-
 
 def normalize_webdav_url(raw: str) -> str:
     """'pull.example.com' -> 'https://pull.example.com'. ``http://`` is accepted only for local-network hosts: a password or access key

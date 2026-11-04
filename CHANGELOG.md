@@ -8,7 +8,7 @@
   encrypted (DPAPI) in `connections.bin`, never in settings, logs, reports or the UI.
 - **Discovery** ("Check" in the add-server form: Nextcloud / SFTPGo / unknown) and **invite codes** (`tools/make_invite.py`): address, user and access key in one string, never the password.
 - Connection selector in the job editor and on the Files page; the folder picker works for every connection; messages say "the server" instead of "Nextcloud" where it applies.
-- `http://` only for local-network addresses; the TLS certificate is always verified.
+- `http://` only for local-network addresses (Nextcloud connections too: they used to accept `http://` for any host); the TLS certificate is always verified.
 - Existing jobs and the saved Nextcloud login keep working unchanged (jobs without a connection are Nextcloud jobs).
 - Self-test and reports cover every connection. `tests/test_connections.py` (real rclone against a fake WebDAV server with the access-key gate), `tools/live_sftpgo_test.py` (manual, real SFTPGo).
 - Docs: `docs/CONNECTIONS.md`, `docs/SFTPGO.md`, wiki pages *Other servers* and *SFTPGo server setup*.

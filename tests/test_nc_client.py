@@ -22,6 +22,13 @@ class UrlNormalising(unittest.TestCase):
         for raw, expected in cases.items():
             self.assertEqual(normalize_server_url(raw), expected, raw)
 
+    def test_plain_http_is_refused_for_the_internet_but_fine_on_the_local_network(self) -> None:
+        for bad in ("http://cloud.example.com", "http://8.8.8.8", "http://93.184.216.34:8080"):
+            with self.assertRaisesRegex(NextcloudError, "https://"):
+                normalize_server_url(bad)
+        for fine in ("http://192.168.1.5:8080", "http://localhost:8080", "http://nas", "http://nas.local"):
+            self.assertTrue(normalize_server_url(fine).startswith("http://"), fine)
+
     def test_rejects_garbage(self) -> None:
         for bad in ("", "   ", "ftp://x.example", "https://"):
             with self.assertRaises(NextcloudError, msg=bad):

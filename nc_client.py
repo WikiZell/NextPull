@@ -9,6 +9,7 @@ The actual file transfers are done by rclone; this module never downloads or del
 from __future__ import annotations
 
 import base64
+import ipaddress
 import json
 import re
 import urllib.error
@@ -47,6 +48,20 @@ class Entry:
         return asdict(self)
 
 
+def is_private_host(host: str) -> bool:
+    """True for addresses that never leave the local network (so plain http is acceptable there)."""
+    host = (host or "").strip("[]").lower()
+    if not host:
+        return False
+    if host == "localhost" or host.endswith((".local", ".lan", ".home.arpa", ".internal")) or "." not in host and ":" not in host:
+        return True
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return ip.is_private or ip.is_loopback or ip.is_link_local
+
+
 def normalize_server_url(raw: str) -> str:
     """'cloud.example.com', 'https://cloud.example.com/index.php/login' ... -> 'https://cloud.example.com'.
     A sub-folder install ('https://host/nextcloud') is kept."""
@@ -58,6 +73,8 @@ def normalize_server_url(raw: str) -> str:
     parts = urllib.parse.urlsplit(text)
     if parts.scheme not in ("http", "https") or not parts.netloc:
         raise NextcloudError("That does not look like a web address")
+    if parts.scheme == "http" and not is_private_host(parts.hostname or ""):
+        raise NextcloudError("Use https:// for a server on the internet. Your login would be sent unencrypted otherwise")
     path = re.sub(r"/(index\.php|apps|login|remote\.php|ocs|f)(/.*)?$", "", parts.path.rstrip("/"))
     return urllib.parse.urlunsplit((parts.scheme, parts.netloc, path, "", ""))
 
