@@ -27,6 +27,12 @@ A job pulls from a **connection**. There are two types, both transferred by rclo
 `discover(address)`: `GET /status.php` (Nextcloud JSON) -> `nextcloud`; else an unauthenticated `PROPFIND /`: a 401 with a Basic challenge (SFTPGo also names itself in the `Server` header) -> `sftpgo`.
 No answer (a server hidden behind an access-key gate) -> `unknown` with a hint to use the invite code.
 
+## NextPush
+
+[NextPush](https://github.com/WikiZell/NextPush) is our own zero-config server (users, per-user shared folders, invite codes, built on SFTPGo). It announces itself at `/.well-known/nextpush`
+(`{"nextpush": 1, "name": ..., "dav": "/dav", "version": ...}`); `discover` then returns `type: sftpgo`, `product: NextPush`, `server` = address + the `dav` path (validated: 1-6 plain segments, no `//`, no `..`).
+A NextPush with the access key on does not answer strangers, so discovery works only for people who already have the key; they normally use the invite code instead.
+
 ## Invite code
 
 `nextpull-invite:` + base64url(JSON `{v:1, t:"sftpgo", u:<url>, user?, l?, k?:[name,value]}`). Made by `tools/make_invite.py`. It never contains the password.

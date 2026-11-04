@@ -473,7 +473,8 @@ function openAddServer() {
     const r = await call("discover_server", $("as-server").value);
     found.textContent = !r.ok ? `${r.error || "No answer"}${r.hint ? " " + r.hint : ""}`
       : r.type === "nextcloud" ? "This is a Nextcloud server: connect to it with the Nextcloud card instead (browser sign-in)."
-      : `${r.product || "WebDAV server"}${r.version ? " " + r.version : ""} found. Enter your user name and password.`;
+      : `${r.product || "WebDAV server"}${r.name ? ` "${r.name}"` : ""}${r.version ? " " + r.version : ""} found. Enter your user name and password.`;
+    if (r.ok && r.type !== "nextcloud" && r.server) $("as-server").value = r.server;
   });
   overlay.querySelector("#as-save").addEventListener("click", async () => {
     const b = overlay.querySelector("#as-save"); b.disabled = true; b.textContent = "Testing...";

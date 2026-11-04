@@ -1,6 +1,7 @@
 """Connections: Nextcloud (the original login) next to SFTPGo / plain WebDAV servers with a user name, a password and an optional access-key header."""
 from __future__ import annotations
 
+import json
 import os
 import time
 import unittest
@@ -309,6 +310,49 @@ class TlsEvidence(unittest.TestCase):
         https = clean_connection({"server": "pull.example.com", "user": "b", "password": "x"})
         local = clean_connection({"server": "http://192.168.1.10:8092", "user": "b", "password": "x"})
         self.assertEqual((public_view(https)["secure"], public_view(local)["secure"]), (True, False))
+
+
+class NextPushDiscovery(unittest.TestCase):
+    """NextPush (our own server) announces itself at /.well-known/nextpush; the form then fills in the WebDAV address for the user."""
+
+    def serve(self, payload: bytes, status: int = 200):
+        import threading
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self) -> None:
+                ok = self.path == "/.well-known/nextpush"
+                self.send_response(status if ok else 404)
+                self.send_header("Content-Length", str(len(payload) if ok else 0))
+                self.end_headers()
+                if ok:
+                    self.wfile.write(payload)
+
+            do_PROPFIND = do_GET
+
+            def log_message(self, *args) -> None:
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(lambda: (server.shutdown(), server.server_close()))
+        return f"http://127.0.0.1:{server.server_address[1]}"
+
+    def test_nextpush_is_recognised_and_the_dav_address_completed(self) -> None:
+        base = self.serve(json.dumps({"nextpush": 1, "name": "Home server", "version": "0.1.0", "dav": "/dav", "auth": "basic"}).encode())
+        found = discover(base, timeout=5)
+        self.assertEqual((found["ok"], found["type"], found["product"], found["name"], found["version"]), (True, "sftpgo", "NextPush", "Home server", "0.1.0"))
+        self.assertEqual(found["server"], base + "/dav")
+
+    def test_a_hostile_dav_path_is_not_followed(self) -> None:
+        for dav in ("//evil.example.com", "http://evil.example.com/x", "/../../etc", "/a b", "/" + "x" * 100):
+            base = self.serve(json.dumps({"nextpush": 1, "dav": dav}).encode())
+            found = discover(base, timeout=5)
+            self.assertNotEqual(found.get("product"), "NextPush", dav)
+
+    def test_other_json_is_not_nextpush(self) -> None:
+        for payload in (b"[]", b'{"nextpush": 0}', b"not json", b"{}"):
+            self.assertNotEqual(discover(self.serve(payload), timeout=5).get("product"), "NextPush", payload)
 
 
 class RunnerPieces(unittest.TestCase):

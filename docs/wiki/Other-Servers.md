@@ -13,6 +13,8 @@ Move, a time and a speed limit. The transfers are done by [rclone](https://rclon
 
 The **Files** page and the job editor then have a **Connection** selector, so you can browse and pull from Nextcloud and from the server side by side.
 
+If the administrator runs **[NextPush](https://github.com/WikiZell/NextPush)** (our own simple server: users, folders and invite codes from a web page), *Check* recognises it and fills in the right address for you.
+
 ## What is different from Nextcloud
 
 | | Nextcloud | SFTPGo / WebDAV server |

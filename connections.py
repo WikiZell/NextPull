@@ -149,6 +149,17 @@ def discover(address: str, timeout: float = 8.0) -> dict[str, Any]:
                 info = {}
             if isinstance(info, dict) and info.get("installed") is not None and ("version" in info or "productname" in info):
                 return {"ok": True, "type": "nextcloud", "server": server, "version": str(info.get("versionstring") or info.get("version") or "")}
+        status, _, body = _request("GET", f"{server}/.well-known/nextpush", timeout=timeout)   # NextPush (our own server) announces itself and where its WebDAV is
+        if status == 200:
+            try:
+                info = json.loads(body.decode("utf-8"))
+            except ValueError:
+                info = {}
+            if isinstance(info, dict) and info.get("nextpush"):
+                dav = str(info.get("dav") or "/dav")
+                segments = [part for part in dav.strip("/").split("/") if part != ""] if dav.startswith("/") and "//" not in dav else None
+                if segments is not None and 1 <= len(segments) <= 6 and all(re.fullmatch(r"[A-Za-z0-9_~-][A-Za-z0-9._~-]{0,30}", part) for part in segments):
+                    return {"ok": True, "type": SFTPGO, "server": server + dav.rstrip("/"), "version": str(info.get("version") or ""), "product": "NextPush", "name": str(info.get("name") or "")[:60]}
         status, headers, _ = _request("PROPFIND", server + "/", headers={"Depth": "0"}, timeout=timeout)
     except NextcloudError as error:
         return {"ok": False, "type": "unknown", "server": server, "error": str(error), "hint": "If the server needs an access key, use the invite code you were given."}

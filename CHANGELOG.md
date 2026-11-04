@@ -14,6 +14,8 @@
 - Docs: `docs/CONNECTIONS.md`, `docs/SFTPGO.md`, wiki pages *Other servers* and *SFTPGo server setup*.
 
 ### Safety
+- **NextPush discovery**: *Check* in the add-server form recognises our own server, [NextPush](https://github.com/WikiZell/NextPush), from `/.well-known/nextpush` and fills in its WebDAV address. A hostile
+  `dav` path in that document is never followed. Invite codes made by NextPush are the same format as `tools/make_invite.py`.
 - **Encryption evidence and redirect guard**: *Test* / *Check connection* show the real TLS handshake (protocol, issuer, verified certificate) or "not encrypted (local network)"; requests that carry a login or access key
   never follow a redirect to another host or from https to plain http; Nextcloud addresses must use `https://` unless they are on the local network.
 - Pinned with real-rclone tests: a Move never removes the job's own Nextcloud folder (only emptied sub-folders). Hard rule 18 in AGENTS.md.
