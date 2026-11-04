@@ -56,17 +56,17 @@ class Records(unittest.TestCase):
                 clean_header(name, value)
 
     def test_a_record_needs_user_password_and_a_safe_address(self) -> None:
-        record = clean_connection({"server": "pull.example.com", "user": " ben ", "password": PASSWORD, "header_name": KEY[0], "header_value": KEY[1], "label": ""})
-        self.assertEqual((record["server"], record["user"], record["type"]), ("https://pull.example.com", "ben", "sftpgo"))
-        self.assertEqual(record["label"], "pull.example.com (ben)")
+        record = clean_connection({"server": "pull.example.com", "user": " bob ", "password": PASSWORD, "header_name": KEY[0], "header_value": KEY[1], "label": ""})
+        self.assertEqual((record["server"], record["user"], record["type"]), ("https://pull.example.com", "bob", "sftpgo"))
+        self.assertEqual(record["label"], "pull.example.com (bob)")
         self.assertTrue(record["id"].startswith("sg-"))
-        for broken in ({"server": "pull.example.com", "user": "", "password": "x"}, {"server": "pull.example.com", "user": "ben", "password": ""}, {"server": "http://pull.example.com", "user": "b", "password": "x"},
+        for broken in ({"server": "pull.example.com", "user": "", "password": "x"}, {"server": "pull.example.com", "user": "bob", "password": ""}, {"server": "http://pull.example.com", "user": "b", "password": "x"},
                        {"server": "pull.example.com", "user": "b", "password": "x", "id": "nextcloud"}, {"server": "pull.example.com", "user": "b", "password": "x", "id": "../x"}):
             with self.assertRaises((ValueError, NextcloudError)):
                 clean_connection(broken)
 
     def test_the_public_view_has_no_secrets(self) -> None:
-        record = clean_connection({"server": "pull.example.com", "user": "ben", "password": PASSWORD, "header_name": KEY[0], "header_value": KEY[1]})
+        record = clean_connection({"server": "pull.example.com", "user": "bob", "password": PASSWORD, "header_name": KEY[0], "header_value": KEY[1]})
         text = repr(public_view(record))
         self.assertNotIn(PASSWORD, text)
         self.assertNotIn(KEY[1], text)
@@ -81,10 +81,10 @@ class Records(unittest.TestCase):
 
 class Invites(unittest.TestCase):
     def test_round_trip_and_no_password_inside(self) -> None:
-        code = make_invite("pull.example.com", "ben", KEY[0], KEY[1], "Home server")
+        code = make_invite("pull.example.com", "bob", KEY[0], KEY[1], "Home server")
         self.assertTrue(code.startswith("nextpull-invite:"))
         self.assertNotIn(PASSWORD, code)
-        self.assertEqual(parse_invite(code), {"server": "https://pull.example.com", "user": "ben", "label": "Home server", "header_name": KEY[0], "header_value": KEY[1]})
+        self.assertEqual(parse_invite(code), {"server": "https://pull.example.com", "user": "bob", "label": "Home server", "header_name": KEY[0], "header_value": KEY[1]})
         self.assertEqual(parse_invite(make_invite("https://pull.example.com"))["header_name"], "")
 
     def test_damaged_codes_are_refused(self) -> None:
@@ -97,7 +97,7 @@ class Store(TempCase):
     def test_connections_persist_encrypted_and_coexist_with_the_nextcloud_login(self) -> None:
         store = SecretStore(self.tmp, **dpapi_stand_in())
         store.save("https://cloud.example.org", "alice", "nc-app-pass-1234")
-        record = clean_connection({"server": "pull.example.com", "user": "ben", "password": PASSWORD, "header_name": KEY[0], "header_value": KEY[1]})
+        record = clean_connection({"server": "pull.example.com", "user": "bob", "password": PASSWORD, "header_name": KEY[0], "header_value": KEY[1]})
         store.save_connection(record)
         raw = (self.tmp / "connections.bin").read_bytes()
         self.assertNotIn(PASSWORD.encode(), raw)
@@ -133,12 +133,12 @@ class WebdavCase(TempCase):
         write_file(self.remote / "Incoming" / "Anime" / "Sub" / "ep 2.mkv", 800)
         write_file(self.remote / "Incoming" / "it's a file (1).mkv", 700)
         os.environ["FAKE_REMOTE_ROOT"] = str(self.remote)
-        self.server = FakeNextcloud(self.remote, user="ben", password=PASSWORD, dav_root=True, base_path=self.prefix, require_header=KEY)
+        self.server = FakeNextcloud(self.remote, user="bob", password=PASSWORD, dav_root=True, base_path=self.prefix, require_header=KEY)
         self.url = self.server.start() + self.prefix
         self.addCleanup(self.server.stop)
 
     def creds(self, **extra) -> dict:
-        return {"type": "sftpgo", "id": "sg-test01", "label": "Home", "server": self.url, "user": "ben", "password": PASSWORD, "header_name": KEY[0], "header_value": KEY[1], **extra}
+        return {"type": "sftpgo", "id": "sg-test01", "label": "Home", "server": self.url, "user": "bob", "password": PASSWORD, "header_name": KEY[0], "header_value": KEY[1], **extra}
 
 
 class SessionAndGate(WebdavCase):
@@ -150,7 +150,7 @@ class SessionAndGate(WebdavCase):
         self.assertEqual([entry.path for entry in session.list_dir("Incoming/Ranma ½")], ["Incoming/Ranma ½/Episodio 01 [BDRip].mkv"])
         self.assertTrue(session.check_folder("Incoming"))
         self.assertFalse(session.check_folder("Incoming/it's a file (1).mkv"))
-        self.assertEqual(session.user_info()["display_name"], "ben")
+        self.assertEqual(session.user_info()["display_name"], "bob")
 
     def test_strangers_get_no_answer_at_all(self) -> None:
         for creds in (self.creds(header_name="", header_value=""), self.creds(header_value="wrong")):
@@ -180,7 +180,7 @@ class SessionAndGate(WebdavCase):
 
 class Discovery(WebdavCase):
     def test_a_webdav_server_is_recognised_and_named(self) -> None:
-        gate_free = FakeNextcloud(self.remote, user="ben", password=PASSWORD, dav_root=True)
+        gate_free = FakeNextcloud(self.remote, user="bob", password=PASSWORD, dav_root=True)
         base = gate_free.start()
         self.addCleanup(gate_free.stop)
         found = discover(base, timeout=5)
@@ -355,12 +355,40 @@ class NextPushDiscovery(unittest.TestCase):
             self.assertNotEqual(discover(self.serve(payload), timeout=5).get("product"), "NextPush", payload)
 
 
+class LockedOut(unittest.TestCase):
+    def test_a_429_from_a_login_protecting_server_is_explained(self) -> None:
+        import threading
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_PROPFIND(self) -> None:
+                self.send_response(429)
+                self.send_header("Retry-After", "30")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+
+            def log_message(self, *args) -> None:
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(lambda: (server.shutdown(), server.server_close()))
+        session = connections.make_session({"type": "sftpgo", "server": f"http://127.0.0.1:{server.server_address[1]}/dav", "user": "bob", "password": "x"})
+        for call in (lambda: session.check_folder("Films"), lambda: session.list_dir("")):
+            with self.assertRaisesRegex(NextcloudError, "asking you to wait.*too many wrong passwords"):
+                call()
+        try:
+            session.check_folder("Films")
+        except NextcloudError as error:
+            self.assertFalse(error.transient, "no pointless retries that would only make the lock longer")
+
+
 class RunnerPieces(unittest.TestCase):
     def test_env_for_a_webdav_connection(self) -> None:
-        creds = {"type": "sftpgo", "server": "https://pull.example.com/dl-x7", "user": "ben", "password": PASSWORD, "header_name": KEY[0], "header_value": KEY[1]}
+        creds = {"type": "sftpgo", "server": "https://pull.example.com/dl-x7", "user": "bob", "password": PASSWORD, "header_name": KEY[0], "header_value": KEY[1]}
         env = build_env(creds, "OBSCURED", base={})
         self.assertEqual(env["RCLONE_CONFIG_NC_URL"], "https://pull.example.com/dl-x7")
-        self.assertEqual((env["RCLONE_CONFIG_NC_VENDOR"], env["RCLONE_CONFIG_NC_USER"], env["RCLONE_CONFIG_NC_PASS"]), ("other", "ben", "OBSCURED"))
+        self.assertEqual((env["RCLONE_CONFIG_NC_VENDOR"], env["RCLONE_CONFIG_NC_USER"], env["RCLONE_CONFIG_NC_PASS"]), ("other", "bob", "OBSCURED"))
         self.assertEqual(env["RCLONE_CONFIG_NC_HEADERS"], "X-Pull-Key,ak-7f3c9e21d4b8")
         self.assertNotIn("RCLONE_CONFIG_NC_HEADERS", build_env({**creds, "header_name": "", "header_value": ""}, "O", base={}))
         nextcloud = build_env({"type": "nextcloud", "server": "https://cloud.example.org", "user": "alice", "app_password": "x"}, "O", base={})
@@ -451,7 +479,7 @@ class ApiCase(WebdavCase):
         self.addCleanup(self.api.shutdown)
 
     def record(self, **extra) -> dict:
-        return {"server": self.url, "user": "ben", "password": PASSWORD, "header_name": KEY[0], "header_value": KEY[1], "label": "Home server", **extra}
+        return {"server": self.url, "user": "bob", "password": PASSWORD, "header_name": KEY[0], "header_value": KEY[1], "label": "Home server", **extra}
 
     def add(self, **extra) -> str:
         result = self.api.add_connection(self.record(**extra))
@@ -484,23 +512,23 @@ class Api(ApiCase):
 
     def test_jobs_keep_their_connection_and_block_its_removal(self) -> None:
         conn_id = self.add()
-        job = self.api.save_job({"name": "Ben pull", "source": "Incoming", "dest": str(self.tmp / "d"), "connection": conn_id})["job"]
+        job = self.api.save_job({"name": "Bob pull", "source": "Incoming", "dest": str(self.tmp / "d"), "connection": conn_id})["job"]
         self.assertEqual(job["connection"], conn_id)
         listed = [j for j in self.api.list_jobs()["jobs"] if j["id"] == job["id"]][0]
         self.assertEqual(listed["connection_label"], "Home server")
         refused = self.api.remove_connection(conn_id)
         self.assertFalse(refused["ok"])
-        self.assertIn("Ben pull", refused["error"])
+        self.assertIn("Bob pull", refused["error"])
         self.api.delete_job(job["id"])
         self.assertTrue(self.api.remove_connection(conn_id)["ok"])
         self.assertFalse(self.api.remove_connection("nextcloud")["ok"])
 
     def test_discover_and_invite_through_the_bridge(self) -> None:
-        plain = FakeNextcloud(self.remote, user="ben", password=PASSWORD, dav_root=True)
+        plain = FakeNextcloud(self.remote, user="bob", password=PASSWORD, dav_root=True)
         base = plain.start()
         self.addCleanup(plain.stop)
         self.assertEqual(self.api.discover_server(base)["type"], "sftpgo")
-        code = make_invite(self.url, "ben", KEY[0], KEY[1])
+        code = make_invite(self.url, "bob", KEY[0], KEY[1])
         filled = self.api.read_invite(code)
         self.assertTrue(filled["ok"])
         self.assertTrue(self.api.add_connection({**filled, "password": PASSWORD})["ok"])
@@ -520,7 +548,7 @@ class Api(ApiCase):
     def test_self_test_checks_every_connection_and_every_jobs_own_server(self) -> None:
         conn_id = self.add()
         self.api._secrets.save(self.nc_base, "alice", "app-pass-1234")
-        self.api.save_job({"name": "Ben pull", "source": "Incoming", "dest": str(self.tmp / "d"), "connection": conn_id})
+        self.api.save_job({"name": "Bob pull", "source": "Incoming", "dest": str(self.tmp / "d"), "connection": conn_id})
         self.api.save_job({"name": "Cloud pull", "source": "EXTRACTED", "dest": str(self.tmp / "d2")})
         by_id = {item["id"]: item for item in self.api.self_test()["results"]}
         self.assertEqual(by_id["nextcloud"]["status"], "ok")
@@ -541,7 +569,7 @@ class Api(ApiCase):
 class Restart(TempCase):
     def test_connections_and_the_job_choice_survive_a_restart(self) -> None:
         api = NextPullApi(self.tmp / "data", poll_seconds=0.05)
-        record = clean_connection({"server": "http://192.168.1.10:8092", "user": "ben", "password": PASSWORD, "header_name": KEY[0], "header_value": KEY[1], "id": "sg-keep01", "label": "Pi"})
+        record = clean_connection({"server": "http://192.168.1.10:8092", "user": "bob", "password": PASSWORD, "header_name": KEY[0], "header_value": KEY[1], "id": "sg-keep01", "label": "Pi"})
         api._secrets.save_connection(record)
         api.save_job({"name": "Keep", "source": "Incoming", "dest": str(self.tmp / "d"), "connection": "sg-keep01"})
         api.shutdown()

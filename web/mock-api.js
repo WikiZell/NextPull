@@ -14,7 +14,7 @@
       {id: "e5f6a7b8", name: "Weekend series", enabled: false, source: "Series/Archive", mode: "copy", dest: "E:\\Series", schedule: {days: [5, 6], time: "09:30", stop_by: ""}, catch_up: false, catch_up_hours: 12,
        speed: {limit_mbps: 0, timetable: "08:00,2M 23:00,off"}, transfers: 2, streams: 4, min_age_minutes: 5, excludes: [], includes: ["*.mkv"], checksum: true, dry_run: false, delete_empty_dirs: true, retries: 3},
     ],
-    servers: new URLSearchParams(location.search).has("servers") ? [{id: "sg-1a2b3c", type: "sftpgo", type_label: "SFTPGo / WebDAV", label: "Home server (ben)", server: "https://dl-x7k2.example.com", user: "ben", has_access_key: true}] : [],
+    servers: new URLSearchParams(location.search).has("servers") ? [{id: "sg-1a2b3c", type: "sftpgo", type_label: "SFTPGo / WebDAV", label: "Home server (bob)", server: "https://dl-x7k2.example.com", user: "bob", has_access_key: true}] : [],
     run: new URLSearchParams(location.search).has("running") ? {t0: Date.now() - 1500e3, total: 5.5e9, bytes: 0} : null,
   };
   const tree = {"": ["Documents", "Photos", "Shared", "Series"], Shared: ["DOWNLOAD", "EXTRACTED"], "Shared/EXTRACTED": ["Robocar POLI"], Series: ["Archive"], "Series/Archive": []};
@@ -84,7 +84,7 @@
     update_info: async () => ok(updInfo()), check_update: async () => { state.updChecked = true; return ok(updInfo()); }, skip_update: async () => { state.updSkipped = true; return ok(updInfo()); }, open_release_page: async () => ok({}),
     list_connections: async () => ok({connections: [...(state.connected ? [{id: "nextcloud", type: "nextcloud", type_label: "Nextcloud", label: "Nextcloud", server: "https://cloud.example.org", user: "alice", has_access_key: false}] : []), ...state.servers]}),
     discover_server: async a => a && a.includes("cloud") ? ok({type: "nextcloud", version: "34.0.0"}) : ok({type: "sftpgo", product: "SFTPGo", version: "2.7.6"}),
-    read_invite: async code => code.startsWith("nextpull-invite:") ? ok({server: "https://pull.example.com", user: "ben", label: "Home server", header_name: "X-Pull-Key", header_value: "demo"}) : {ok: false, error: "That is not a NextPull invite code"},
+    read_invite: async code => code.startsWith("nextpull-invite:") ? ok({server: "https://pull.example.com", user: "bob", label: "Home server", header_name: "X-Pull-Key", header_value: "demo"}) : {ok: false, error: "That is not a NextPull invite code"},
     add_connection: async r => { if (!r.password) return {ok: false, error: "Enter the password"}; const c = {id: "sg-" + Math.random().toString(16).slice(2, 8), type: "sftpgo", type_label: "SFTPGo / WebDAV", label: r.label || r.server + " (" + r.user + ")", server: r.server, user: r.user, has_access_key: !!r.header_name}; state.servers.push(c); return ok({connection: c}); },
     test_connection: async () => ok({seconds: 0.4}), remove_connection: async id => { state.servers = state.servers.filter(s => s.id !== id); return ok({}); },
     log_ui_error: async () => ok({}), ack_problems: async () => ok({}),

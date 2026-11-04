@@ -207,6 +207,12 @@ class NextcloudSession:
         self.server, self.user, self.password, self.timeout = normalize_server_url(server), user, app_password, timeout
         self.uid = uid or None
 
+    def _check_locked_out(self, status: int) -> None:
+        """Only servers that protect logins (NextPush) answer 429 to a login: say what it means instead of calling it maintenance."""
+        if status == 429 and self.noun == "server":
+            raise NextcloudError("The server is asking you to wait: too many wrong passwords came from this address. Try again in a few minutes (the lock is short), "
+                                 "check that the saved password is right, or ask the administrator to unblock the address.")
+
     def files_user(self) -> str:
         """The id to use in ``/remote.php/dav/files/<id>``: asked from Nextcloud once, remembered. Falls back to the login name
         only if the server will not say (then a plain user name still works). A rejected login raises."""
@@ -233,6 +239,7 @@ class NextcloudSession:
             raise NextcloudError("Invalid folder")
         url = self.files_url + ("/" + urllib.parse.quote(clean, safe="/") if clean else "") + "/"
         status, _, body = _request("PROPFIND", url, headers={**self._auth, "Depth": "1", "Content-Type": "application/xml"}, data=PROPFIND_BODY.encode("utf-8"), timeout=self.timeout, noun=self.noun)
+        self._check_locked_out(status)
         if status in (401, 403):
             raise NextcloudError(f"{self.label} rejected the saved login. {self.fix}")
         if status == 404:
@@ -253,6 +260,7 @@ class NextcloudSession:
             raise NextcloudError("Invalid folder")
         url = self.files_url + ("/" + urllib.parse.quote(clean, safe="/") if clean else "")
         status, headers, body = _request("PROPFIND", url, headers={**self._auth, "Depth": "0", "Content-Type": "application/xml"}, data=PROPFIND_BODY.encode("utf-8"), timeout=self.timeout, noun=self.noun)
+        self._check_locked_out(status)
         if status in (401, 403):
             raise NextcloudError(f"{self.label} rejected the saved login. {self.fix}")
         if status == 404:

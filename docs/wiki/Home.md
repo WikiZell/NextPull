@@ -17,6 +17,7 @@ catches up when the PC was off, and keeps a history with logs and statistics. It
 
 | Page | What it covers |
 | --- | --- |
+| [NextPush server](NextPush-Server) | Our own simple server: you get an invite code, paste it, done |
 | [Other servers (SFTPGo)](Other-Servers) | Pull from an SFTPGo / WebDAV server as well as Nextcloud |
 | [SFTPGo server setup](SFTPGo-Server-Setup) | For the administrator: WebDAV, a restricted user, hiding the server behind a proxy |
 | [Scheduling and speed](Scheduling-and-Speed) | Start time, weekdays, stop-by, catch-up, missed runs, speed limit and timetable |

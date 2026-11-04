@@ -4,6 +4,7 @@
 - [Installation](Installation)
 - [Getting started](Getting-Started)
 - [Jobs reference](Jobs-Reference)
+- [NextPush server](NextPush-Server)
 - [Other servers (SFTPGo)](Other-Servers)
 - [SFTPGo server setup](SFTPGo-Server-Setup)
 - [Scheduling and speed](Scheduling-and-Speed)

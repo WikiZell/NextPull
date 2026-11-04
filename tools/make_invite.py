@@ -1,7 +1,7 @@
 """Administrator tool: make an invite code for a server connection. The person pastes it in NextPull (Settings -> Other servers -> Add a server) and only has to
 type the password. The code holds the address, optionally the user name, the access key and a name. It never holds the password.
 
-    py -3 tools\\make_invite.py pull.example.com ben X-Pull-Key <the key> "Home server"
+    py -3 tools\\make_invite.py pull.example.com bob X-Pull-Key <the key> "Home server"
     py -3 tools\\make_invite.py pull.example.com                 # address only
 """
 from __future__ import annotations

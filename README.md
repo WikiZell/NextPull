@@ -75,6 +75,11 @@ UI work without the backend: open `web\index.html?mock=1&page=jobs` ([docs/UI.md
 | [docs/LIVE-TEST.md](docs/LIVE-TEST.md) | Manual end-to-end test against a real Nextcloud with dummy files |
 | [CHANGELOG.md](CHANGELOG.md) | What changed |
 
+## Sharing files with NextPull: NextPush
+
+**[NextPush](https://github.com/WikiZell/NextPush)** is the matching server: a zero-config, web-managed file server (Linux and Windows, also headless) where the administrator creates users, chooses which folders each user may use and sends an
+**invite code**. In NextPull: *Settings -> Other servers -> Add a server*, paste the code, type the password. Details: [wiki: NextPush server](https://github.com/WikiZell/NextPull/wiki/NextPush-Server).
+
 ## Status
 
 Version 0.1.0: all features above work. They are covered by tests against a fake rclone and a fake Nextcloud **and by 11 tests with the real rclone (v1.75.1) over WebDAV**, and the packaged `NextPull.exe` starts correctly. A live test against a real Nextcloud (dummy files, clean data folder, 37/39 first run, both misses fixed in the test) is in [docs/LIVE-TEST.md](docs/LIVE-TEST.md).

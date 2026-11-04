@@ -14,6 +14,7 @@
 - Docs: `docs/CONNECTIONS.md`, `docs/SFTPGO.md`, wiki pages *Other servers* and *SFTPGo server setup*.
 
 ### Safety
+- A `429` from a server that locks out an address after wrong passwords (NextPush) is now explained ("too many wrong passwords from this address, try again in a few minutes") instead of looking like maintenance, and is not retried.
 - **NextPush discovery**: *Check* in the add-server form recognises our own server, [NextPush](https://github.com/WikiZell/NextPush), from `/.well-known/nextpush` and fills in its WebDAV address. A hostile
   `dav` path in that document is never followed. Invite codes made by NextPush are the same format as `tools/make_invite.py`.
 - **Encryption evidence and redirect guard**: *Test* / *Check connection* show the real TLS handshake (protocol, issuer, verified certificate) or "not encrypted (local network)"; requests that carry a login or access key
