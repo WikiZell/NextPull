@@ -5,6 +5,7 @@ import os
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import applog
 import connections
@@ -200,6 +201,114 @@ class Discovery(WebdavCase):
     def test_nothing_listening_and_bad_input(self) -> None:
         self.assertEqual(discover("http://127.0.0.1:1", timeout=2)["type"], "unknown")
         self.assertFalse(discover("http://example.com")["ok"])   # plain http to a public host is refused before any request
+
+
+class Redirects(unittest.TestCase):
+    """A request that carries a login or an access key must never be sent somewhere else, or from https down to http."""
+
+    def setUp(self) -> None:
+        import threading
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+        outer = self
+        self.location = ""
+        self.seen: list[str] = []
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self) -> None:
+                outer.seen.append(self.path + " auth=" + str(bool(self.headers.get("Authorization"))))
+                if self.path.startswith("/go"):
+                    self.send_response(301)
+                    self.send_header("Location", outer.location)
+                    self.send_header("Content-Length", "0")
+                else:
+                    self.send_response(200)
+                    self.send_header("Content-Length", "2")
+                    self.end_headers()
+                    self.wfile.write(b"ok")
+                    return
+                self.end_headers()
+
+            def log_message(self, *args) -> None:
+                pass
+
+        self.http = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.port = self.http.server_address[1]
+        threading.Thread(target=self.http.serve_forever, daemon=True).start()
+        self.addCleanup(lambda: (self.http.shutdown(), self.http.server_close()))
+
+    def get(self, with_login: bool, location: str):
+        from nc_client import _request
+        self.location = location
+        return _request("GET", f"http://127.0.0.1:{self.port}/go", headers={"Authorization": "Basic eDp5"} if with_login else {}, timeout=5)
+
+    def test_a_redirect_to_unencrypted_http_on_the_internet_is_refused(self) -> None:
+        for with_login in (True, False):
+            with self.assertRaisesRegex(NextcloudError, "unencrypted"):
+                self.get(with_login, "http://cloud.example.com/ok")
+
+    def test_a_login_is_never_forwarded_to_another_host(self) -> None:
+        with self.assertRaisesRegex(NextcloudError, "different host"):
+            self.get(True, f"http://localhost:{self.port}/ok")
+        self.assertEqual(self.seen, ["/go auth=True"], "the second request must not even be sent")
+
+    def test_a_key_header_counts_as_sensitive_too(self) -> None:
+        from nc_client import _request
+        self.location = f"http://localhost:{self.port}/ok"
+        with self.assertRaisesRegex(NextcloudError, "different host"):
+            _request("GET", f"http://127.0.0.1:{self.port}/go", headers={"X-Pull-Key": "k"}, timeout=5)
+
+    def test_harmless_and_same_host_redirects_still_work(self) -> None:
+        self.assertEqual(self.get(False, f"http://localhost:{self.port}/ok")[0], 200)    # nothing sensitive in the request
+        self.assertEqual(self.get(True, f"http://127.0.0.1:{self.port}/ok")[0], 200)     # same host, even with a login
+
+
+class TlsEvidence(unittest.TestCase):
+    def test_local_http_is_reported_honestly(self) -> None:
+        info = connections.tls_info("http://192.168.1.10:8092")
+        self.assertEqual((info["encrypted"], info["scope"]), (False, "local network"))
+
+    def test_a_good_handshake_reports_protocol_issuer_and_expiry(self) -> None:
+        class FakeTls:
+            def __enter__(self): return self
+            def __exit__(self, *exc): return False
+            def getpeercert(self): return {"issuer": ((("organizationName", "Let's Encrypt"),),), "notAfter": "Jan 30 03:12:13 2027 GMT"}
+            def version(self): return "TLSv1.3"
+            def cipher(self): return ("TLS_AES_256_GCM_SHA384", "TLSv1.3", 256)
+
+        class FakeContext:
+            def wrap_socket(self, sock, server_hostname): return FakeTls()
+
+        class FakeSocket:
+            def __enter__(self): return self
+            def __exit__(self, *exc): return False
+
+        with mock.patch("connections.socket.create_connection", return_value=FakeSocket()), mock.patch("connections.ssl.create_default_context", return_value=FakeContext()):
+            info = connections.tls_info("https://pull.example.com")
+        self.assertEqual((info["encrypted"], info["protocol"], info["issuer"]), (True, "TLSv1.3", "Let's Encrypt"))
+        self.assertIn("verified", info["summary"])
+
+    def test_an_invalid_certificate_is_never_called_encrypted(self) -> None:
+        import ssl
+
+        class BadContext:
+            def wrap_socket(self, sock, server_hostname): raise ssl.SSLCertVerificationError(1, "certificate verify failed: self-signed certificate")
+
+        class FakeSocket:
+            def __enter__(self): return self
+            def __exit__(self, *exc): return False
+
+        with mock.patch("connections.socket.create_connection", return_value=FakeSocket()), mock.patch("connections.ssl.create_default_context", return_value=BadContext()):
+            info = connections.tls_info("https://pull.example.com")
+        self.assertFalse(info["encrypted"])
+        self.assertIn("not valid", info["error"])
+
+    def test_an_unreachable_host_is_reported_not_raised(self) -> None:
+        self.assertFalse(connections.tls_info("https://127.0.0.1:1", timeout=2)["encrypted"])
+
+    def test_the_connection_list_says_whether_each_one_is_https(self) -> None:
+        https = clean_connection({"server": "pull.example.com", "user": "b", "password": "x"})
+        local = clean_connection({"server": "http://192.168.1.10:8092", "user": "b", "password": "x"})
+        self.assertEqual((public_view(https)["secure"], public_view(local)["secure"]), (True, False))
 
 
 class RunnerPieces(unittest.TestCase):

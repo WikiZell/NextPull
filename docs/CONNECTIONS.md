@@ -38,6 +38,14 @@ No answer (a server hidden behind an access-key gate) -> `unknown` with a hint t
 sessions and the gate, discovery, the runner pieces, **real rclone** copy/move/failed-delete/secret-redaction against the fake server, the bridge, and a restart. `tools/live_sftpgo_test.py`
 is the manual test against a real SFTPGo (see SFTPGO.md).
 
+## Encryption rules (what the code enforces)
+
+* `normalize_server_url` / `normalize_webdav_url`: `http://` only for local-network hosts (`nc_client.is_private_host`), so a password or key never leaves the LAN unencrypted by typing the wrong scheme.
+* `nc_client._SafeRedirects`: urllib forwards every header on a redirect, `Authorization` included. A request with a login or an `X-` access key follows a redirect only to the same host, and no redirect
+  goes to `http://` outside the local network (tests: `Redirects` in `tests/test_connections.py`). rclone has its own redirect handling (Go's client drops the login on a host change).
+* TLS is verified everywhere (`ssl.create_default_context`, urllib's default, rclone's default). No code path disables it.
+* `connections.tls_info(server)` performs a real verified handshake and reports protocol / cipher / issuer / expiry for the *Test* and *Check connection* buttons, or "not encrypted (local network)".
+
 ## Limits to remember
 
 * rclone does not resume a download that was interrupted across runs (it starts that file again); within a run it resumes dropped connections with Range requests.

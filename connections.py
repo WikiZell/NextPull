@@ -13,6 +13,8 @@ from __future__ import annotations
 import base64
 import json
 import re
+import socket
+import ssl
 import urllib.parse
 import uuid
 from typing import Any
@@ -82,10 +84,31 @@ def clean_connection(raw: Any) -> dict[str, str]:
     return {"id": conn_id, "type": SFTPGO, "label": label, "server": server, "user": user, "password": password, "header_name": header_name, "header_value": header_value}
 
 
+def tls_info(server: str, timeout: float = 8.0) -> dict[str, Any]:
+    """Evidence for the user that a connection is encrypted: for https the real TLS handshake (certificate **and** host name verified against the system's
+    trusted roots) with protocol, cipher, issuer and expiry; for a local-network ``http://`` address an honest "not encrypted (local network)"."""
+    parts = urllib.parse.urlsplit(server)
+    host = parts.hostname or ""
+    if parts.scheme != "https":
+        return {"encrypted": False, "scope": "local network" if is_private_host(host) else "internet", "summary": "Not encrypted (local network)" if is_private_host(host) else "NOT encrypted"}
+    try:
+        with socket.create_connection((host, parts.port or 443), timeout=timeout) as sock, ssl.create_default_context().wrap_socket(sock, server_hostname=host) as tls:
+            cert = tls.getpeercert() or {}
+            issuer = dict(item[0] for item in cert.get("issuer", ())).get("organizationName", "")
+            version = tls.version() or ""
+            return {"encrypted": True, "protocol": version, "cipher": (tls.cipher() or ("",))[0], "issuer": issuer, "expires": cert.get("notAfter", ""),
+                    "summary": f"Encrypted: {version}, certificate from {issuer or 'a trusted authority'} verified"}
+    except ssl.SSLCertVerificationError as error:
+        return {"encrypted": False, "error": f"The server's certificate is not valid ({getattr(error, 'verify_message', None) or error})", "summary": "Certificate NOT valid"}
+    except (OSError, ssl.SSLError) as error:
+        return {"encrypted": False, "error": f"Could not check the encryption ({error})", "summary": "Encryption could not be checked"}
+
+
 def public_view(record: dict[str, Any]) -> dict[str, Any]:
     """What the UI may see: never the password or the access key value."""
     return {"id": record["id"], "type": record["type"], "type_label": TYPE_LABELS.get(record["type"], record["type"]), "label": record.get("label") or record["id"],
-            "server": record.get("server", ""), "user": record.get("user", ""), "has_access_key": bool(record.get("header_name"))}
+            "server": record.get("server", ""), "user": record.get("user", ""), "has_access_key": bool(record.get("header_name")),
+            "secure": str(record.get("server", "")).startswith("https://")}
 
 
 def secrets_of(creds: dict[str, Any]) -> list[str]:

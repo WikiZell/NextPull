@@ -88,7 +88,7 @@ Keep these; add a test when you touch the code that enforces them.
 16. **Release rclone's pipes** after each run (the ResourceWarning-clean test run guards this).
 19. **Connections**: a job names its connection (`job["connection"]`, default `nextcloud`). Passwords and access keys live only in `SecretStore` (`credentials.bin` / `connections.bin`, DPAPI), never in
     settings, jobs, logs, reports or `public_view`; register every secret with `applog.register_secret`. `http://` is accepted only for local-network hosts (`normalize_webdav_url`), TLS is always verified,
-    never `--no-check-certificate`. A WebDAV-root login only lists, downloads and deletes files: no upload, rename or mkdir, and no `--delete-empty-src-dirs`. A job whose connection is missing fails; it never
+    never `--no-check-certificate`, and a request carrying a login or key never follows a redirect to another host or to plain http (`nc_client._SafeRedirects`). A WebDAV-root login only lists, downloads and deletes files: no upload, rename or mkdir, and no `--delete-empty-src-dirs`. A job whose connection is missing fails; it never
     falls back to another server.
 18. **Move never removes the job's own source folder**: rclone's `--delete-empty-src-dirs` only removes emptied *sub*-folders; the root of the job stays, even when empty
     (pinned against the real rclone in `tests/test_real_rclone.py`). Never add a code path that deletes the source root.

@@ -14,6 +14,8 @@
 - Docs: `docs/CONNECTIONS.md`, `docs/SFTPGO.md`, wiki pages *Other servers* and *SFTPGo server setup*.
 
 ### Safety
+- **Encryption evidence and redirect guard**: *Test* / *Check connection* show the real TLS handshake (protocol, issuer, verified certificate) or "not encrypted (local network)"; requests that carry a login or access key
+  never follow a redirect to another host or from https to plain http; Nextcloud addresses must use `https://` unless they are on the local network.
 - Pinned with real-rclone tests: a Move never removes the job's own Nextcloud folder (only emptied sub-folders). Hard rule 18 in AGENTS.md.
 
 ### Also in this version

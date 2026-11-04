@@ -47,6 +47,8 @@ proxy_send_timeout 3600s;
 client_max_body_size 1m;
 ```
 
+   Also: turn on **Force SSL** and **HSTS**, and make sure the DNS record is **DNS-only** (grey cloud) if you do not want a CDN to decrypt the traffic. Port 80 may stay open only to redirect.
+   When the host works, open NextPull -> *Test* on the connection: it shows the TLS version and the verified certificate.
 4. Make an invite code: `py -3 tools\make_invite.py pull.example.com ben X-Pull-Key <the key> "Home server"`. Send the code and, **separately**, the password.
 
 The full version of this page, with the test data and the live test, is `docs/SFTPGO.md` in the repository.

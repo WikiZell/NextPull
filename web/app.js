@@ -446,7 +446,7 @@ function updateHtml(u) {
 function serversHtml(conns) {
   const others = (conns || []).filter(c => c.type !== "nextcloud");
   if (!others.length) return '<div class="empty">No other server yet.</div>';
-  return others.map(c => `<div class="srv"><div class="grow"><b>${esc(c.label)}</b> <span class="badge">${esc(c.type_label)}</span>${c.has_access_key ? ' <span class="badge ok">access key</span>' : ""}<div class="hint mono">${esc(c.server)} - ${esc(c.user)}</div></div>
+  return others.map(c => `<div class="srv"><div class="grow"><b>${esc(c.label)}</b> <span class="badge">${esc(c.type_label)}</span> <span class="badge ${c.secure ? "ok" : "warn"}">${c.secure ? "HTTPS" : "not encrypted (local network)"}</span>${c.has_access_key ? ' <span class="badge ok">access key</span>' : ""}<div class="hint mono">${esc(c.server)} - ${esc(c.user)}</div></div>
     <button class="btn ghost small" data-srv-test="${esc(c.id)}">Test</button><button class="btn ghost small" data-srv-del="${esc(c.id)}">Remove</button></div>`).join("");
 }
 function openAddServer() {
@@ -484,7 +484,7 @@ function openAddServer() {
 }
 function wireSettings() {
   const addServer = $("st-addserver"); if (addServer) addServer.addEventListener("click", openAddServer);
-  document.querySelectorAll("[data-srv-test]").forEach(b => b.addEventListener("click", async () => { b.disabled = true; const r = await call("test_connection", b.dataset.srvTest); b.disabled = false; if (r.ok) toast(`Connection works (${r.seconds}s)`, "ok"); }));
+  document.querySelectorAll("[data-srv-test]").forEach(b => b.addEventListener("click", async () => { b.disabled = true; const r = await call("test_connection", b.dataset.srvTest); b.disabled = false; if (r.ok) toast(`Connection works (${r.seconds}s). ${r.tls ? r.tls.summary : ""}`, r.tls && r.tls.encrypted === false && r.tls.scope === "internet" ? "error" : "ok"); }));
   document.querySelectorAll("[data-srv-del]").forEach(b => b.addEventListener("click", async () => { if (!await ask("Remove this server? Its saved password is deleted.", "Remove", true)) return; const r = await call("remove_connection", b.dataset.srvDel); if (r.ok) { toast("Removed", "ok"); loadSettings(); } }));
   const on = (id, fn, evt = "click") => { const el = $(id); if (el) el.addEventListener(evt, fn); };
   const save = async () => {
@@ -498,7 +498,7 @@ function wireSettings() {
   on("st-watchdog", async () => { const r = await call("set_watchdog", $("st-watchdog").checked); if (!r.ok) $("st-watchdog").checked = !$("st-watchdog").checked; }, "change");
   on("st-connect", async () => { const r = await call("connect_start", $("st-server").value); if (r.ok) { S.login = {state: "waiting", login_url: r.login_url, message: ""}; loadSettings(); } });
   on("st-cancel-login", async () => { await call("connect_cancel"); S.login = {state: "cancelled", message: "Sign-in cancelled"}; loadSettings(); });
-  on("st-check", async () => { const r = await call("connection", true); if (r.ok) { toast("Connection is working", "ok"); loadSettings(); } });
+  on("st-check", async () => { const r = await call("connection", true); if (r.ok) { toast(`Connection is working. ${r.tls ? r.tls.summary : ""}`, r.tls && r.tls.encrypted === false && r.tls.scope === "internet" ? "error" : "ok"); loadSettings(); } });
   on("st-disconnect", async () => { if (!await ask("Disconnect from Nextcloud? Scheduled jobs will fail until you connect again.", "Disconnect", true)) return; const r = await call("disconnect", $("st-revoke").checked); if (r.ok) { S.login = null; toast(r.revoked ? "Disconnected and access removed on the server" : "Disconnected", "ok"); loadSettings(); } });
   on("st-upcheck", async () => { const b = $("st-upcheck"); b.disabled = true; b.textContent = "Checking..."; const r = await call("check_update"); b.disabled = false; b.textContent = "Check now"; if (r.ok) { S.upd = r; $("st-upd").innerHTML = updateHtml(r); if (r.available) toast(`Version ${r.latest.version} is available`, "ok"); else if (!r.error) toast("You have the latest version", "ok"); } });
   on("st-logs", () => call("open_logs"));

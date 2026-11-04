@@ -235,7 +235,7 @@ class NextPullApi:
     def connection(self, refresh: bool = False) -> dict[str, Any]:
         if refresh and self._secrets.connected():
             self._user_cache = self._session().user_info()
-        return {"ok": True, "connection": self._connection()}
+        return {"ok": True, "connection": self._connection(), **({"tls": connections.tls_info(self._connection()["server"])} if refresh and self._secrets.connected() else {})}
 
     @safe
     def connect_start(self, server: str) -> dict[str, Any]:
@@ -306,7 +306,8 @@ class NextPullApi:
         items: list[dict[str, Any]] = []
         nc = self._secrets.load()
         if nc:
-            items.append({"id": "nextcloud", "type": "nextcloud", "type_label": "Nextcloud", "label": "Nextcloud", "server": nc["server"], "user": nc["user"], "has_access_key": False})
+            items.append({"id": "nextcloud", "type": "nextcloud", "type_label": "Nextcloud", "label": "Nextcloud", "server": nc["server"], "user": nc["user"], "has_access_key": False,
+                          "secure": nc["server"].startswith("https://")})
         items += [connections.public_view(record) for record in self._secrets.connections()]
         return {"ok": True, "connections": items}
 
@@ -336,7 +337,7 @@ class NextPullApi:
         started = time.monotonic()
         session = self._session(conn_id)
         session.user_info()
-        return {"ok": True, "seconds": round(time.monotonic() - started, 2)}
+        return {"ok": True, "seconds": round(time.monotonic() - started, 2), "tls": connections.tls_info(session.server)}
 
     @safe
     def remove_connection(self, conn_id: str) -> dict[str, Any]:

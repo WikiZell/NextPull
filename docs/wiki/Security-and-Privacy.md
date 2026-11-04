@@ -15,6 +15,18 @@
 
 See [Problems and reports](Problems-and-Reports). No passwords or tokens, ever; names, server and account name are replaced by codes unless you tick *Include names*.
 
+## What is encrypted
+
+| Part of the path | Encrypted? |
+| --- | --- |
+| This PC <-> your server over the **internet** (Nextcloud or another server) | **Yes: HTTPS (TLS)**. NextPull refuses `http://` for any address that is not on your own network, always verifies the certificate and the host name, and never follows a redirect that would send your login to another host or down to plain http |
+| Between the reverse proxy and the server **inside your own network** (for example proxy -> SFTPGo) | No (plain HTTP on the LAN). That is a deliberate, common choice; it is only visible to someone already on your network |
+| A server on your local network used directly (`http://192.168.x.x`) | No, and NextPull shows it as "not encrypted (local network)" |
+| Files stored on the server or on this PC | Not encrypted by NextPull (use disk encryption if you need it) |
+
+**See it for yourself:** *Settings -> Check connection* (Nextcloud) and *Test* (other servers) show the real handshake: protocol (for example TLS 1.3), who issued the certificate, and that it was verified.
+If you put a CDN proxy such as Cloudflare in front of the server, the traffic is still encrypted on the wire, but that provider decrypts it. A DNS-only record avoids that.
+
 ## Network
 
 NextPull talks only to **your Nextcloud server and the other servers you added** (see [Other servers](Other-Servers); `http://` is accepted only on your own network and certificates are always verified) (WebDAV / OCS over HTTPS if your server uses it) and, for the one-time setup, to `downloads.rclone.org` if you use `tools\Fetch-rclone.ps1`. There is no telemetry and no account. The only other request is the optional **update check**: about every 6 hours NextPull asks `api.github.com` for the latest NextPull release (a public request that sends nothing but a User-Agent). You can switch it off in *Settings -> Updates*. See [Updates](Updates).

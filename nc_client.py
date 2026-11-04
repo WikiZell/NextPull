@@ -87,14 +87,33 @@ def basic_auth(user: str, password: str) -> str:
     return "Basic " + base64.b64encode(f"{user}:{password}".encode("utf-8")).decode("ascii")
 
 
+class _SafeRedirects(urllib.request.HTTPRedirectHandler):
+    """urllib forwards every header, the Authorization one included, to wherever a redirect points. A request that carries a login or an access key
+    therefore follows a redirect only to the **same host**, and never from https to plain http outside the local network."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):   # noqa: ANN001 - signature fixed by urllib
+        sensitive = any(name.lower() == "authorization" or name.lower().startswith("x-") for name in req.headers)
+        old, new = urllib.parse.urlsplit(req.full_url), urllib.parse.urlsplit(newurl)
+        if new.scheme == "http" and not is_private_host(new.hostname or ""):
+            raise NextcloudError("The server redirected to an unencrypted address (http://). Nothing was sent. Check the address or the server's HTTPS setup")
+        if sensitive and (new.hostname or "").lower() != (old.hostname or "").lower():
+            raise NextcloudError("The server redirected to a different host. Nothing was sent. Check the address you entered")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+_OPENER = urllib.request.build_opener(_SafeRedirects())
+
+
 def _request(method: str, url: str, *, headers: dict[str, str] | None = None, data: bytes | None = None, timeout: float = 20.0, noun: str = "Nextcloud") -> tuple[int, dict[str, str], bytes]:
     request = urllib.request.Request(url, data=data, method=method, headers={"User-Agent": USER_AGENT, **(headers or {})})
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        with _OPENER.open(request, timeout=timeout) as response:
             return response.status, {key.lower(): value for key, value in response.headers.items()}, response.read()
     except urllib.error.HTTPError as error:
         body = error.read() if hasattr(error, "read") else b""
         return error.code, {key.lower(): value for key, value in (error.headers or {}).items()}, body
+    except NextcloudError:
+        raise
     except (urllib.error.URLError, TimeoutError, OSError) as error:
         reason = getattr(error, "reason", error)
         raise NextcloudError(f"Cannot reach the {noun} server ({reason})" if noun != "server" else f"Cannot reach the server ({reason})", transient=True) from error

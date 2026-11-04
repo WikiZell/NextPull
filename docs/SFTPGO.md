@@ -61,6 +61,8 @@ proxy_send_timeout 3600s;
 client_max_body_size 1m;
 ```
 
+   Also: Force SSL and HSTS on; a **DNS-only** record if no CDN should see the traffic in clear. The hop proxy -> SFTPGo stays plain HTTP on the LAN (accepted); everything that leaves the LAN is TLS.
+   NextPull's *Test* button on the connection shows the TLS version and the verified certificate.
 4. Make the invite code for the person: `py -3 tools\make_invite.py pull.example.com ben X-Pull-Key <the key> "Home server"`. Send the code and, **separately**, the password.
 
 NextPull sends the key as the header `X-Pull-Key` (any header name works if you change both sides). It refuses `http://` for any address that is not on the local network, and always verifies the TLS certificate.
