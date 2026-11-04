@@ -19,7 +19,7 @@ class JobValidation(unittest.TestCase):
         self.assertFalse(job["dry_run"])
 
     def test_required_fields(self) -> None:
-        for field, message in (("name", "name"), ("source", "Nextcloud folder"), ("dest", "destination")):
+        for field, message in (("name", "name"), ("source", "folder to download"), ("dest", "destination")):
             with self.assertRaises(ValueError, msg=field) as caught:
                 clean_job({"name": "x", "source": "a", "dest": "b"} | {field: "  "})
             self.assertIn(message, str(caught.exception))

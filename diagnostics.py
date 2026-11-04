@@ -102,9 +102,9 @@ def check(check_id: str, title: str, status: str, detail: str = "", hint: str = 
     return {"id": check_id, "title": title, "status": status, "detail": detail, "hint": hint}
 
 
-def run_self_test(*, rclone: Callable[[], dict[str, Any]], session: Callable[[], Any] | None, jobs: list[dict[str, Any]], engine_last_tick: float | None,
+def run_self_test(*, rclone: Callable[[], dict[str, Any]], session: Callable[..., Any] | None, jobs: list[dict[str, Any]], engine_last_tick: float | None,
                   tick_seconds: float, data_dir: Path | None, free_bytes: Callable[[Path], int | None], autostart: bool, watchdog: bool,
-                  dest_free_warn: int = 2 * 1024 ** 3) -> list[dict[str, str]]:
+                  dest_free_warn: int = 2 * 1024 ** 3, connections: list[tuple[str, str]] | None = None) -> list[dict[str, str]]:
     """Every check returns a result instead of raising, so one broken part never hides the others."""
     results: list[dict[str, str]] = []
 
@@ -122,16 +122,21 @@ def run_self_test(*, rclone: Callable[[], dict[str, Any]], session: Callable[[],
             return check("rclone", "rclone", "ok", f"{info.get('version', '')} at {info.get('path', '')}")
         return check("rclone", "rclone", "error", info.get("message", "not found"), hint_for("rclone was not found"))
 
-    def server_check() -> dict[str, str]:
+    def server_check() -> list[dict[str, str]]:
         if session is None:
-            return check("nextcloud", "Nextcloud connection", "error", "Not connected", hint_for("not connected"))
-        started = time.monotonic()
-        try:
-            user = session().user_info()
-        except Exception as error:   # noqa: BLE001 - NextcloudError and anything below it
-            text = str(error)
-            return check("nextcloud", "Nextcloud connection", "error", text, hint_for(text))
-        return check("nextcloud", "Nextcloud connection", "ok", f"Signed in as {user.get('display_name') or user.get('id', '?')} ({time.monotonic() - started:.1f}s)")
+            return [check("nextcloud", "Nextcloud connection", "error", "Not connected", hint_for("not connected"))]
+        out: list[dict[str, str]] = []
+        for conn_id, label in (connections or [("nextcloud", "Nextcloud")]):
+            title = "Nextcloud connection" if conn_id == "nextcloud" else f"Connection '{label}'"
+            started = time.monotonic()
+            try:
+                user = session(conn_id).user_info()
+            except Exception as error:   # noqa: BLE001 - NextcloudError and anything below it
+                text = str(error)
+                out.append(check("nextcloud" if conn_id == "nextcloud" else f"connection:{conn_id}", title, "error", text, hint_for(text)))
+                continue
+            out.append(check("nextcloud" if conn_id == "nextcloud" else f"connection:{conn_id}", title, "ok", f"Signed in as {user.get('display_name') or user.get('id', '?')} ({time.monotonic() - started:.1f}s)"))
+        return out
 
     def job_checks() -> list[dict[str, str]]:
         out: list[dict[str, str]] = []
@@ -143,10 +148,10 @@ def run_self_test(*, rclone: Callable[[], dict[str, Any]], session: Callable[[],
             problems: list[str] = []
             if session is not None:
                 try:
-                    if not session().check_folder(job["source"]):
-                        problems.append(f"{job['source']} on Nextcloud is a file, not a folder")
+                    if not session(job.get("connection") or "nextcloud").check_folder(job["source"]):
+                        problems.append(f"{job['source']} is a file, not a folder")
                 except Exception as error:   # noqa: BLE001
-                    problems.append(f"Nextcloud folder {job['source']}: {error}")
+                    problems.append(f"Source folder {job['source']}: {error}")
             dest = Path(job["dest"])
             if not dest.is_dir():
                 parent = next((p for p in dest.parents if p.is_dir()), None)
@@ -266,9 +271,9 @@ Privacy
 
 def build_report(*, version: str, data_dir: Path | None, out_dir: Path, settings: dict[str, Any], jobs: list[dict[str, Any]], runs: list[dict[str, Any]],
                  files_for: Callable[[int], list[dict[str, Any]]], problems: list[dict[str, Any]], self_test: list[dict[str, str]] | None,
-                 connection: dict[str, Any], include_names: bool = False, note: str = "") -> Path:
+                 connection: dict[str, Any], include_names: bool = False, note: str = "", extra_literals: list[str] | None = None) -> Path:
     """Write ``nextpull-report-<time>.zip`` into ``out_dir`` and return its path. Keeps only the 5 newest reports."""
-    literals = [connection.get("server", ""), connection.get("user", ""), connection.get("display_name", "")]
+    literals = [connection.get("server", ""), connection.get("user", ""), connection.get("display_name", ""), *(extra_literals or [])]
     for job in jobs:
         literals += [job.get("source", ""), job.get("dest", "")]
     for run in runs:

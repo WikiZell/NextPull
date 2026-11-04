@@ -13,7 +13,7 @@
     <nav id="nav">
       <button class="nav active" data-page="dashboard"><span class="ic">&#9673;</span>Dashboard</button>
       <button class="nav" data-page="jobs"><span class="ic">&#9776;</span>Jobs</button>
-      <button class="nav" data-page="files"><span class="ic">&#128193;</span>Nextcloud files</button>
+      <button class="nav" data-page="files"><span class="ic">&#128193;</span>Files</button>
       <button class="nav" data-page="history"><span class="ic">&#9202;</span>History</button>
       <button class="nav" data-page="stats"><span class="ic">&#9636;</span>Statistics</button>
       <button class="nav" data-page="diagnostics"><span class="ic">&#9888;</span>Problems<span class="count" id="nav-problems" hidden></span></button>
@@ -45,7 +45,7 @@
     </section>
 
     <section id="page-files" class="page" hidden>
-      <div class="page-head"><div><h1>Nextcloud files</h1><p>Browse your Nextcloud folders. Nothing is downloaded or deleted from here.</p></div><button class="btn" id="files-make-job">Create job from this folder</button></div>
+      <div class="page-head"><div><h1>Files</h1><p>Browse the folders of a connected server. Nothing is downloaded or deleted from here.</p></div><div class="row"><label id="files-conn-wrap" hidden style="min-width:200px">Connection<select id="files-conn"></select></label><button class="btn" id="files-make-job">Create job from this folder</button></div></div>
       <div class="card stack"><div class="crumbs" id="files-crumbs"></div><div class="list" id="files-list"></div></div>
     </section>
 

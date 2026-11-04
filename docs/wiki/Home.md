@@ -17,6 +17,8 @@ catches up when the PC was off, and keeps a history with logs and statistics. It
 
 | Page | What it covers |
 | --- | --- |
+| [Other servers (SFTPGo)](Other-Servers) | Pull from an SFTPGo / WebDAV server as well as Nextcloud |
+| [SFTPGo server setup](SFTPGo-Server-Setup) | For the administrator: WebDAV, a restricted user, hiding the server behind a proxy |
 | [Scheduling and speed](Scheduling-and-Speed) | Start time, weekdays, stop-by, catch-up, missed runs, speed limit and timetable |
 | [Move mode and safety](Move-Mode-and-Safety) | How Move deletes on Nextcloud, Dry run, name clashes, what is never overwritten |
 | [History and statistics](History-and-Statistics) | Reading runs, per-file results, logs and charts |

@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 import applog
+import connections
 import diagnostics
 import updates
 import winutil
@@ -29,7 +30,7 @@ from rclone_runner import RcloneError, find_rclone, rclone_version
 from scheduler import describe_schedule
 from store import ConfigStore, HistoryDb, SecretStore, new_job_id
 
-__version__ = "0.1.1"
+__version__ = "0.2.0"
 APP_NAME = "NextPull"
 DATA_DIR = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local") / APP_NAME
 LOGIN_TIMEOUT = 20 * 60
@@ -80,18 +81,23 @@ class NextPullApi:
         saved = self._secrets.load()
         if saved:
             applog.register_secret(saved["app_password"])
+        for record in self._secrets.connections():
+            for secret in connections.secrets_of(record):
+                applog.register_secret(secret)
         _log.info("NextPull %s opened (data dir %s, connected=%s)", __version__, data_dir, bool(saved))
 
     # ------------------------------------------------------------------------------------------------ internals
     def _find_rclone(self) -> list[str] | None:
         return find_rclone(self._config.settings()["rclone_path"], [winutil.exe_dir(), winutil.app_dir()])
 
-    def _session(self) -> NextcloudSession:
-        creds = self._secrets.load()
+    def _session(self, conn_id: str = "nextcloud") -> NextcloudSession:
+        """A client for one connection (the original Nextcloud login by default)."""
+        creds = self._secrets.creds_for(conn_id)
         if not creds:
-            raise NextcloudError("Not connected to Nextcloud. Open Settings and connect.")
-        applog.register_secret(creds["app_password"])
-        return NextcloudSession(creds["server"], creds["user"], creds["app_password"], uid=creds.get("uid"))
+            raise NextcloudError("Not connected to Nextcloud. Open Settings and connect." if conn_id in ("", "nextcloud") else "That connection no longer exists. Add it again in Settings.")
+        for secret in connections.secrets_of(creds):
+            applog.register_secret(secret)
+        return connections.make_session(creds)
 
     def _remember_uid(self, session: NextcloudSession) -> None:
         """Keep the user id the session found (older saved logins do not have it) so later calls skip the lookup."""
@@ -107,9 +113,15 @@ class NextPullApi:
         return {"connected": True, "server": creds["server"], "user": creds["user"], "display_name": info.get("display_name") or creds["user"],
                 "quota_used": info.get("quota_used"), "quota_total": info.get("quota_total")}
 
+    def _connection_label(self, conn_id: str | None) -> str:
+        if not conn_id or conn_id == "nextcloud":
+            return "Nextcloud"
+        record = self._secrets.creds_for(conn_id)
+        return (record or {}).get("label") or "(missing connection)"
+
     def _job_view(self, job: dict[str, Any], status_jobs: dict[str, dict[str, Any]]) -> dict[str, Any]:
         extra = status_jobs.get(job["id"], {})
-        return {**job, "schedule_text": describe_schedule(job["schedule"]), "next_run": extra.get("next_run"), "last_run": extra.get("last_run"), "running": extra.get("running", False)}
+        return {**job, "connection_label": self._connection_label(job.get("connection")), "schedule_text": describe_schedule(job["schedule"]), "next_run": extra.get("next_run"), "last_run": extra.get("last_run"), "running": extra.get("running", False)}
 
     def start_engine(self) -> None:
         self._engine.start()
@@ -209,7 +221,8 @@ class NextPullApi:
     def status(self) -> dict[str, Any]:
         status = self._engine.status()
         status["ok"] = True
-        status["connected"] = self._secrets.connected()
+        status["connected"] = self._secrets.connected() or bool(self._secrets.connections())
+        status["nextcloud_connected"] = self._secrets.connected()
         status["rclone_found"] = self._find_rclone() is not None
         status["events"] = self._engine.events()[:25]
         view = self._update_view()
@@ -286,12 +299,63 @@ class NextPullApi:
         self._login = {"state": "idle", "message": ""}
         return {"ok": True, "revoked": revoked}
 
+    # ----------------------------------------------------------------------------------------- other connections
+    @safe
+    def list_connections(self) -> dict[str, Any]:
+        """Every connection a job can use, without secrets. The Nextcloud login (when present) comes first with the fixed id ``nextcloud``."""
+        items: list[dict[str, Any]] = []
+        nc = self._secrets.load()
+        if nc:
+            items.append({"id": "nextcloud", "type": "nextcloud", "type_label": "Nextcloud", "label": "Nextcloud", "server": nc["server"], "user": nc["user"], "has_access_key": False})
+        items += [connections.public_view(record) for record in self._secrets.connections()]
+        return {"ok": True, "connections": items}
+
+    @safe
+    def discover_server(self, address: str) -> dict[str, Any]:
+        """What is at this address? ``{type: nextcloud|sftpgo|unknown, ...}``; the form uses it to pick the right sign-in."""
+        return connections.discover(address)
+
+    @safe
+    def read_invite(self, code: str) -> dict[str, Any]:
+        """Prefill data from an invite code (address, optional user name and access key; never a password)."""
+        return {"ok": True, **connections.parse_invite(code)}
+
+    @safe
+    def add_connection(self, record: dict[str, Any]) -> dict[str, Any]:
+        """Validate, **test the login against the server**, and only then save (encrypted). Nothing is stored when the test fails."""
+        clean = connections.clean_connection(record)
+        for secret in connections.secrets_of(clean):
+            applog.register_secret(secret)
+        connections.make_session(clean, timeout=20).user_info()
+        self._secrets.save_connection(clean)
+        _log.info("connection added: %s (%s, user %s)", clean["id"], clean["server"], clean["user"])
+        return {"ok": True, "connection": connections.public_view(clean)}
+
+    @safe
+    def test_connection(self, conn_id: str) -> dict[str, Any]:
+        started = time.monotonic()
+        session = self._session(conn_id)
+        session.user_info()
+        return {"ok": True, "seconds": round(time.monotonic() - started, 2)}
+
+    @safe
+    def remove_connection(self, conn_id: str) -> dict[str, Any]:
+        if conn_id in ("", "nextcloud"):
+            return {"ok": False, "error": "Use Disconnect in the Nextcloud card for the Nextcloud login"}
+        users = [job["name"] for job in self._config.jobs() if job.get("connection") == conn_id]
+        if users:
+            return {"ok": False, "error": f"{len(users)} job(s) use this connection ({', '.join(users[:3])}). Edit or delete them first."}
+        removed = self._secrets.delete_connection(conn_id)
+        _log.info("connection removed: %s (%s)", conn_id, removed)
+        return {"ok": removed, **({} if removed else {"error": "That connection no longer exists"})}
+
     # -------------------------------------------------------------------------------------------------- browsing
     @safe
-    def browse(self, path: str = "") -> dict[str, Any]:
-        session = self._session()
+    def browse(self, path: str = "", connection: str = "nextcloud") -> dict[str, Any]:
+        session = self._session(connection)
         entries = [entry.to_dict() for entry in session.list_dir(path)]
-        self._remember_uid(session)
+        if connection in ("", "nextcloud"):
+            self._remember_uid(session)
         clean = "/".join(part for part in str(path).replace("\\", "/").split("/") if part)
         parent = clean.rsplit("/", 1)[0] if "/" in clean else ""
         return {"ok": True, "path": clean, "parent": parent if clean else None, "entries": entries}
@@ -476,8 +540,8 @@ class NextPullApi:
     @safe
     def self_test(self) -> dict[str, Any]:
         _log.info("self-test started")
-        has_creds = self._secrets.connected()
-        results = diagnostics.run_self_test(rclone=self.check_rclone, session=self._session if has_creds else None, jobs=self._config.jobs(), engine_last_tick=self._engine.last_tick,
+        known = self.list_connections()["connections"]
+        results = diagnostics.run_self_test(rclone=self.check_rclone, session=self._session if known else None, connections=[(item["id"], item["label"]) for item in known], jobs=self._config.jobs(), engine_last_tick=self._engine.last_tick,
                                             tick_seconds=self._engine.tick_seconds, data_dir=self._data_dir, free_bytes=winutil.free_bytes, autostart=winutil.autostart_enabled(),
                                             watchdog=winutil.watchdog_enabled() if winutil.IS_WINDOWS else False)
         self._last_self_test = results
@@ -494,7 +558,8 @@ class NextPullApi:
         runs = self._history.list_runs(100)
         path = diagnostics.build_report(version=__version__, data_dir=self._data_dir, out_dir=out_dir, settings=self._config.settings(), jobs=self._config.jobs(), runs=runs,
                                         files_for=self._history.list_files, problems=diagnostics.group_problems(runs), self_test=self._last_self_test,
-                                        connection=self._connection(), include_names=bool(include_names), note=str(note)[:2000])
+                                        connection=self._connection(), include_names=bool(include_names), note=str(note)[:2000],
+                                        extra_literals=[value for record in self._secrets.connections() for value in (record.get("server"), record.get("user"), record.get("label"))])
         _log.info("report written: %s (names included: %s)", path.name, bool(include_names))
         return {"ok": True, "path": str(path), "folder": str(out_dir), "size": path.stat().st_size}
 

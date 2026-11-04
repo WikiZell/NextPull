@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
 import threading
 from datetime import datetime, timedelta
@@ -84,9 +85,15 @@ def new_job_id() -> str:
     return uuid4().hex[:8]
 
 
+def clean_connection_id(value: Any) -> str:
+    """Which connection a job pulls from. Jobs saved before connections existed have none: that is the original Nextcloud login."""
+    text = str(value or "").strip()
+    return text if re.match(r"^[A-Za-z0-9_-]{1,32}$", text) else "nextcloud"
+
+
 def default_job() -> dict[str, Any]:
     return {
-        "id": "", "name": "", "enabled": True, "source": "", "mode": "copy", "dest": "",
+        "id": "", "name": "", "enabled": True, "connection": "nextcloud", "source": "", "mode": "copy", "dest": "",
         "schedule": {"days": list(ALL_DAYS), "time": "02:00", "stop_by": ""},
         "catch_up": True, "catch_up_hours": 12,
         "speed": {"limit_mbps": 0, "timetable": ""},
@@ -106,7 +113,7 @@ def clean_job(raw: Any) -> dict[str, Any]:
         raise ValueError("Give the job a name")
     source = clean_remote_path(raw.get("source"))
     if not source:
-        raise ValueError("Pick the Nextcloud folder to download")
+        raise ValueError("Pick the folder to download")
     dest = str(raw.get("dest") or "").strip()
     if not dest:
         raise ValueError("Pick the destination folder on this PC")
@@ -119,6 +126,7 @@ def clean_job(raw: Any) -> dict[str, Any]:
         raise ValueError("The speed timetable is not valid. Examples: 2M, off, or 08:00,2M 23:00,off")
     job = base | {
         "id": str(raw.get("id") or "").strip() or new_job_id(), "name": name, "enabled": bool(raw.get("enabled", True)),
+        "connection": clean_connection_id(raw.get("connection")),
         "source": source, "mode": mode, "dest": dest,
         "schedule": clean_schedule(raw.get("schedule")),
         "catch_up": bool(raw.get("catch_up", True)), "catch_up_hours": _float(raw.get("catch_up_hours"), 0.5, 72, 12),
@@ -254,6 +262,7 @@ class SecretStore:
         self.data_dir = data_dir
         self._protect, self._unprotect = protect, unprotect
         self._memory: dict[str, str] | None = None
+        self._conns: dict[str, dict[str, str]] | None = None
         self._lock = threading.Lock()
 
     def _codec(self) -> tuple[Callable[[bytes], bytes], Callable[[bytes], bytes]]:
@@ -303,6 +312,59 @@ class SecretStore:
 
     def connected(self) -> bool:
         return self.load() is not None
+
+    # ---- other connections (SFTPGo / WebDAV): one encrypted file ``connections.bin`` holding {id: record}. The Nextcloud login above keeps its
+    # own file and the fixed id "nextcloud", so nothing saved by an earlier version has to be migrated.
+    def _read_connections(self) -> dict[str, dict[str, str]]:
+        if self._conns is not None:
+            return self._conns
+        found: dict[str, dict[str, str]] = {}
+        if self.data_dir and (self.data_dir / "connections.bin").is_file():
+            try:
+                _, unprotect = self._codec()
+                data = json.loads(unprotect((self.data_dir / "connections.bin").read_bytes()).decode("utf-8"))
+                if isinstance(data, dict):
+                    found = {key: value for key, value in data.items() if isinstance(value, dict) and all(isinstance(item, str) for item in value.values()) and value.get("id") == key}
+            except Exception:   # corrupt file or another Windows user: no connections
+                found = {}
+        self._conns = found
+        return found
+
+    def _write_connections(self) -> None:
+        if not self.data_dir:
+            return
+        protect, _ = self._codec()
+        path = self.data_dir / "connections.bin"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_name(f".connections.{uuid4().hex}.tmp")
+        temporary.write_bytes(protect(json.dumps(self._conns or {}).encode("utf-8")))
+        os.replace(temporary, path)
+
+    def connections(self) -> list[dict[str, str]]:
+        with self._lock:
+            return [dict(record) for record in self._read_connections().values()]
+
+    def save_connection(self, record: dict[str, str]) -> None:
+        with self._lock:
+            self._read_connections()[record["id"]] = dict(record)
+            self._write_connections()
+
+    def delete_connection(self, conn_id: str) -> bool:
+        with self._lock:
+            found = self._read_connections().pop(conn_id, None) is not None
+            if found:
+                self._write_connections()
+            return found
+
+    def creds_for(self, conn_id: str | None) -> dict[str, str] | None:
+        """What a run or a browse needs for this connection: the legacy Nextcloud login (type ``nextcloud``) or a saved SFTPGo record."""
+        conn_id = conn_id or "nextcloud"
+        if conn_id == "nextcloud":
+            legacy = self.load()
+            return {**legacy, "type": "nextcloud", "id": "nextcloud"} if legacy else None
+        with self._lock:
+            record = self._read_connections().get(conn_id)
+            return dict(record) if record else None
 
 
 # ------------------------------------------------------------------------------------------------------- history

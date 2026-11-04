@@ -14,6 +14,7 @@
       {id: "e5f6a7b8", name: "Weekend series", enabled: false, source: "Series/Archive", mode: "copy", dest: "E:\\Series", schedule: {days: [5, 6], time: "09:30", stop_by: ""}, catch_up: false, catch_up_hours: 12,
        speed: {limit_mbps: 0, timetable: "08:00,2M 23:00,off"}, transfers: 2, streams: 4, min_age_minutes: 5, excludes: [], includes: ["*.mkv"], checksum: true, dry_run: false, delete_empty_dirs: true, retries: 3},
     ],
+    servers: new URLSearchParams(location.search).has("servers") ? [{id: "sg-1a2b3c", type: "sftpgo", type_label: "SFTPGo / WebDAV", label: "Home server (ben)", server: "https://dl-x7k2.example.com", user: "ben", has_access_key: true}] : [],
     run: new URLSearchParams(location.search).has("running") ? {t0: Date.now() - 1500e3, total: 5.5e9, bytes: 0} : null,
   };
   const tree = {"": ["Documents", "Photos", "Shared", "Series"], Shared: ["DOWNLOAD", "EXTRACTED"], "Shared/EXTRACTED": ["Robocar POLI"], Series: ["Archive"], "Series/Archive": []};
@@ -42,9 +43,9 @@
     return {run_id: 99, job_id: "a1b2c3d4", job_name: "Night pull", state: "running", mode: "move", dry_run: false, started: iso(new Date(r.t0)), bytes: r.bytes, total_bytes: r.total, speed: 7.4e6, eta: Math.max(0, (r.total - r.bytes) / 7.4e6),
       files_done: Math.floor(r.bytes / 2.7e9), transferring: [{name: "Supergirl [2026.1080p].mkv", size: 2.89e9, bytes: r.bytes % 2.89e9, percentage: pct % 100, speed: 7.4e6, eta: 120}], errors: 0, last_error: "", bwlimit: "8M"};
   };
-  const updInfo = () => ({enabled: true, current: "0.1.1", available: !!new URLSearchParams(location.search).has("update"), skipped: !!state.updSkipped, checked: iso(now), error: "", latest: {version: "0.2.0", name: "NextPull 0.2.0", notes: "- Faster listing; fixes", page: "https://github.com/WikiZell/NextPull/releases/tag/v0.2.0", published: iso(now), size: 85e6, installable: true}});
+  const updInfo = () => ({enabled: true, current: "0.2.0", available: !!new URLSearchParams(location.search).has("update"), skipped: !!state.updSkipped, checked: iso(now), error: "", latest: {version: "0.2.0", name: "NextPull 0.2.0", notes: "- Faster listing; fixes", page: "https://github.com/WikiZell/NextPull/releases/tag/v0.2.0", published: iso(now), size: 85e6, installable: true}});
   window.pywebview = {api: {
-    bootstrap: async () => ok({app: {name: "NextPull", version: "0.1.1"}, settings: state.settings, connection: state.connected ? {connected: true, server: "https://cloud.example.org", user: "alice", display_name: "Alice Example", quota_used: 410e9, quota_total: 2e12} : {connected: false},
+    bootstrap: async () => ok({app: {name: "NextPull", version: "0.2.0"}, settings: state.settings, connection: state.connected ? {connected: true, server: "https://cloud.example.org", user: "alice", display_name: "Alice Example", quota_used: 410e9, quota_total: 2e12} : {connected: false},
       rclone: {ok: true, found: true, path: "C:\\NextPull\\tools\\rclone\\rclone.exe", version: "rclone v1.68.2"}, autostart: true, watchdog: false, data_dir: "C:\\Users\\alice\\AppData\\Local\\NextPull", tray: true, windows: true}),
     status: async () => ok({running: !!state.run, current: sim(), starting: false, queue: [], connected: state.connected, rclone_found: true, last_checked: iso(now), now: iso(now),
       jobs: state.jobs.map(j => ({id: j.id, name: j.name, enabled: j.enabled, next_run: j.enabled ? iso(new Date(now.getTime() + 8 * 3600e3)) : null, last_run: {id: runs[0].id, state: runs[0].state, started: runs[0].started, finished: runs[0].finished, files: runs[0].files, bytes: runs[0].bytes, message: runs[0].message}, running: !!state.run && j.id === "a1b2c3d4"})),
@@ -53,8 +54,14 @@
     connect_start: async server => { if (!server) return {ok: false, error: "Enter the Nextcloud address"}; setTimeout(() => { state.connected = true; }, 3000); return ok({login_url: "https://" + server + "/login/v2/flow/abc"}); },
     connect_status: async () => ok({state: state.connected ? "connected" : "waiting", message: "", connection: {connected: state.connected}}),
     connect_cancel: async () => ok({}), disconnect: async () => { state.connected = false; return ok({revoked: true}); },
-    browse: async (path = "") => {
+    browse: async (path = "", conn = "nextcloud") => {
       const clean = String(path).replace(/^\/+|\/+$/g, "");
+      if (conn !== "nextcloud") {
+        const sTree = {"": ["Incoming"], "Incoming": ["Ranma ½", "Anime"]}, sFiles = {"Incoming": [["Film con spazi (1989).mkv", 2.1e9], ["big.mkv", 26.7e9]]};
+        const d = (sTree[clean] || []).map(n => ({name: n, path: clean ? clean + "/" + n : n, is_dir: true, size: 0, modified: iso(now)}));
+        const f = (sFiles[clean] || []).map(([n, z]) => ({name: n, path: clean + "/" + n, is_dir: false, size: z, modified: iso(now)}));
+        return ok({path: clean, parent: clean ? clean.split("/").slice(0, -1).join("/") : null, entries: [...d, ...f]});
+      }
       const dirs = (tree[clean] || []).map(n => ({name: n, path: clean ? clean + "/" + n : n, is_dir: true, size: 4e9, modified: iso(now)}));
       const fl = (files[clean] || []).map(([n, s]) => ({name: n, path: clean + "/" + n, is_dir: false, size: s, modified: iso(day(1))}));
       return ok({path: clean, parent: clean ? clean.split("/").slice(0, -1).join("/") : null, entries: [...dirs, ...fl]});
@@ -72,9 +79,14 @@
     run_log: async () => ok({lines: [{time: "2026-10-01 02:00:02", level: "info", msg: "Copied (new)", object: "Dusting.Cliff.7.mkv"}, {time: "2026-10-01 02:05:27", level: "info", msg: "Deleted", object: "Dusting.Cliff.7.mkv"}, {time: "2026-10-01 02:05:28", level: "error", msg: "Attempt 1/4 failed with 1 errors and: connection reset", object: ""}, {time: "2026-10-01 02:15:12", level: "notice", msg: "Skipped delete as --dry-run", object: "rclone_log.log"}]}),
     clear_history: async () => ok({}),
     diagnostics: async () => ok({runs: [{job: "Night pull", state: "failed", message: "Nextcloud is not reachable: dial tcp: lookup cloud.example.org: no such host", count: 3, last: iso(day(1)), run_id: runs[0].id, hint: "Nextcloud could not be reached. Check the internet connection and that the server is up; NextPull retries on the next schedule.", severity: "error"}, {job: "Night pull", state: "partial", message: "2 files downloaded but not deleted on Nextcloud (403)", count: 1, last: iso(day(2)), run_id: runs[0].id, hint: "Nextcloud or Windows refused the action.", severity: "warn"}],
-      log: [{level: "WARNING", source: "nextpull.run", message: "run 12: Nextcloud pre-check attempt 2/3 failed: timed out", count: 4, last: "2026-10-01 02:00:31", hint: "Nextcloud could not be reached."}], unseen: 2, system: {app_version: "0.1.1", python: "3.13.1", platform: "Windows-11-10.0.26200"}, log_file: "C:\\Users\\alice\\AppData\\Local\\NextPull\\app.log"}),
+      log: [{level: "WARNING", source: "nextpull.run", message: "run 12: Nextcloud pre-check attempt 2/3 failed: timed out", count: 4, last: "2026-10-01 02:00:31", hint: "Nextcloud could not be reached."}], unseen: 2, system: {app_version: "0.2.0", python: "3.13.1", platform: "Windows-11-10.0.26200"}, log_file: "C:\\Users\\alice\\AppData\\Local\\NextPull\\app.log"}),
     app_log: async () => ok({entries: [{time: "2026-10-01 02:00:00", level: "INFO", name: "nextpull.engine", message: "Night pull: queued (run) for slot 2026-10-01T02:00"}, {time: "2026-10-01 02:00:31", level: "WARNING", name: "nextpull.run", message: "run 12: Nextcloud pre-check attempt 2/3 failed: timed out"}, {time: "2026-10-01 02:01:10", level: "ERROR", name: "nextpull.ui", message: "TypeError: x is undefined (app.js:310)"}]}),
     update_info: async () => ok(updInfo()), check_update: async () => { state.updChecked = true; return ok(updInfo()); }, skip_update: async () => { state.updSkipped = true; return ok(updInfo()); }, open_release_page: async () => ok({}),
+    list_connections: async () => ok({connections: [...(state.connected ? [{id: "nextcloud", type: "nextcloud", type_label: "Nextcloud", label: "Nextcloud", server: "https://cloud.example.org", user: "alice", has_access_key: false}] : []), ...state.servers]}),
+    discover_server: async a => a && a.includes("cloud") ? ok({type: "nextcloud", version: "34.0.0"}) : ok({type: "sftpgo", product: "SFTPGo", version: "2.7.6"}),
+    read_invite: async code => code.startsWith("nextpull-invite:") ? ok({server: "https://pull.example.com", user: "ben", label: "Home server", header_name: "X-Pull-Key", header_value: "demo"}) : {ok: false, error: "That is not a NextPull invite code"},
+    add_connection: async r => { if (!r.password) return {ok: false, error: "Enter the password"}; const c = {id: "sg-" + Math.random().toString(16).slice(2, 8), type: "sftpgo", type_label: "SFTPGo / WebDAV", label: r.label || r.server + " (" + r.user + ")", server: r.server, user: r.user, has_access_key: !!r.header_name}; state.servers.push(c); return ok({connection: c}); },
+    test_connection: async () => ok({seconds: 0.4}), remove_connection: async id => { state.servers = state.servers.filter(s => s.id !== id); return ok({}); },
     log_ui_error: async () => ok({}), ack_problems: async () => ok({}),
     self_test: async () => ok({results: [{id: "rclone", title: "rclone", status: "ok", detail: "rclone v1.68.2", hint: ""}, {id: "nextcloud", title: "Nextcloud connection", status: "ok", detail: "Signed in as Alice Example (0.4s)", hint: ""}, {id: "job:a1", title: "Job 'Night pull'", status: "error", detail: "Destination drive/folder D:\Anime is not available", hint: "Edit the job and check the folders."}, {id: "autostart", title: "Start with Windows", status: "warn", detail: "Off", hint: "After a restart NextPull will not run until someone opens it. Turn it on in Settings."}]}),
     export_report: async () => ok({path: "C:\\Users\\alice\\AppData\\Local\\NextPull\\reports\\nextpull-report-20261002-120000.zip", folder: "C:\reports", size: 52000}), reveal_report: async () => ok({}),

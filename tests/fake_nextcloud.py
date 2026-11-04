@@ -47,11 +47,17 @@ def dec(name: str) -> str:
 
 
 class FakeNextcloud:
-    def __init__(self, root: Path, user: str = "alice", password: str = "app-pass-1234", login: str | None = None) -> None:
+    def __init__(self, root: Path, user: str = "alice", password: str = "app-pass-1234", login: str | None = None, dav_root: bool = False, base_path: str = "",
+                 require_header: tuple[str, str] | None = None) -> None:
+        # ``dav_root``: behave like a plain WebDAV server (SFTPGo) that serves the folder at the root of its URL (under ``base_path``) instead of
+        # Nextcloud's /remote.php/dav/files/<id>. ``require_header``: a (name, value) pair; a request without it is dropped without any answer,
+        # like a reverse proxy that hides the server from strangers.
+        self.dav_root, self.base_path, self.require_header = dav_root, base_path.rstrip("/"), require_header
         # ``user`` is the Nextcloud user id (used in the WebDAV path); ``login`` is what the person typed at sign-in (auth + loginName), e.g. an e-mail address
         self.root, self.user, self.password = Path(root), user, password
         self.login = login or user
         self.requests: list[tuple[str, str]] = []
+        self.gated = 0   # requests dropped because the access-key header was missing or wrong
         self.revoked = False
         self.approved = threading.Event()
         self.forbid_delete: set[str] = set()
@@ -60,6 +66,7 @@ class FakeNextcloud:
         self._lock = threading.Lock()
         self._server: ThreadingHTTPServer | None = None
         self.base = ""
+        self.prefix = self.base_path if dav_root else f"/remote.php/dav/files/{urllib.parse.quote(user, safe='')}"
 
     def resolve(self, path: str) -> Path:
         """On-disk location of a Nextcloud-style path: an existing plain name (written directly by a test) wins, else the encoded name."""
@@ -119,6 +126,14 @@ class FakeNextcloud:
         outer = self
 
         class Handler(BaseHTTPRequestHandler):
+            def parse_request(self) -> bool:   # runs before any do_* method: the access-key gate
+                ok = super().parse_request()
+                if ok and outer.require_header and self.headers.get(outer.require_header[0]) != outer.require_header[1]:
+                    outer.gated += 1
+                    self.close_connection = True
+                    return False
+                return ok
+
             protocol_version = "HTTP/1.1"
 
             def log_message(self, *args) -> None:
@@ -138,7 +153,7 @@ class FakeNextcloud:
                 return self.headers.get("Authorization") == expected
 
             def _local(self, url_path: str) -> Path | None:
-                prefix = f"/remote.php/dav/files/{urllib.parse.quote(outer.user, safe='')}"
+                prefix = outer.prefix
                 if not url_path.startswith(prefix):
                     return None
                 relative = urllib.parse.unquote(url_path[len(prefix):]).strip("/")
@@ -178,6 +193,8 @@ class FakeNextcloud:
             def do_GET(self) -> None:
                 path = urllib.parse.urlsplit(self.path).path
                 outer.requests.append((self.command, path))
+                if path == "/status.php" and not outer.dav_root:
+                    return self._send(200, json.dumps({"installed": True, "version": "34.0.0.0", "versionstring": "34.0.0", "productname": "Nextcloud"}).encode(), {"Content-Type": "application/json"})
                 if path == "/ocs/v2.php/cloud/user":
                     if not self._authorized():
                         return self._send(401)
@@ -267,7 +284,7 @@ class FakeNextcloud:
                 outer.requests.append(("PROPFIND", path))
                 self._read_body()
                 if not self._authorized():
-                    return self._send(401)
+                    return self._send(401, headers={"WWW-Authenticate": 'Basic realm="SFTPGo"'} if outer.dav_root else None)
                 handled, _ = self._apply_fault("PROPFIND", path)
                 if handled:
                     return
@@ -276,7 +293,7 @@ class FakeNextcloud:
                     return self._send(404)
                 depth = self.headers.get("Depth", "1")
                 items = [target] + (sorted(target.iterdir()) if target.is_dir() and depth != "0" else [])
-                prefix = f"/remote.php/dav/files/{urllib.parse.quote(outer.user, safe='')}"
+                prefix = outer.prefix
                 parts = []
                 for item in items:
                     relative = "/".join(dec(part) for part in item.resolve().relative_to(outer.root.resolve()).parts)
@@ -300,6 +317,8 @@ class FakeNextcloud:
             def handle_error(self, request, client_address) -> None:   # real clients (rclone) drop idle keep-alive connections: not an error
                 pass
 
+        if self.dav_root:   # name itself like SFTPGo does in its Server header
+            Handler.server_version, Handler.sys_version = "SFTPGo/2.7.6", ""
         self._server = QuietServer(("127.0.0.1", 0), Handler)
         self.base = f"http://127.0.0.1:{self._server.server_address[1]}"
         threading.Thread(target=self._server.serve_forever, daemon=True).start()

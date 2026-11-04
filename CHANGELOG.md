@@ -1,11 +1,22 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 - 2026-11-04
+
+### Added
+- **Connections**: jobs can pull from **SFTPGo / any plain WebDAV server** as well as Nextcloud, with the same engine, scheduler, filters, history and safety rules. A server is added with address, user
+  name and password (and an optional **access key** header that a reverse proxy can require so that strangers get no answer). The login is **tested before it is saved**; secrets are stored
+  encrypted (DPAPI) in `connections.bin`, never in settings, logs, reports or the UI.
+- **Discovery** ("Check" in the add-server form: Nextcloud / SFTPGo / unknown) and **invite codes** (`tools/make_invite.py`): address, user and access key in one string, never the password.
+- Connection selector in the job editor and on the Files page; the folder picker works for every connection; messages say "the server" instead of "Nextcloud" where it applies.
+- `http://` only for local-network addresses; the TLS certificate is always verified.
+- Existing jobs and the saved Nextcloud login keep working unchanged (jobs without a connection are Nextcloud jobs).
+- Self-test and reports cover every connection. `tests/test_connections.py` (real rclone against a fake WebDAV server with the access-key gate), `tools/live_sftpgo_test.py` (manual, real SFTPGo).
+- Docs: `docs/CONNECTIONS.md`, `docs/SFTPGO.md`, wiki pages *Other servers* and *SFTPGo server setup*.
 
 ### Safety
 - Pinned with real-rclone tests: a Move never removes the job's own Nextcloud folder (only emptied sub-folders). Hard rule 18 in AGENTS.md.
 
-### Added
+### Also in this version
 - **Update check**: asks GitHub Releases for a newer version (at start and every 6 hours, switch in Settings -> Updates), shows a banner and a notification (once per version),
   *Check now*, *Skip this version*. Only offers published, non-pre-release versions; links must be HTTPS on GitHub. `updates.py`, `tests/test_updates.py`.
 - `save_settings` now merges with the current settings, so a partial save cannot reset other options.

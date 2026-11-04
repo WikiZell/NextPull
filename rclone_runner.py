@@ -29,7 +29,8 @@ from pathlib import Path
 from typing import Any, Callable, Iterable
 
 import applog
-from nc_client import NextcloudError, NextcloudSession, dav_files_url
+import connections
+from nc_client import NextcloudError, dav_files_url
 from rclone_logic import (LOW_LEVEL_RETRIES, classify_event, exit_message, find_collisions, glob_escape, humanize_error, local_relpath)  # noqa: F401  (re-exported)
 from store import HistoryDb, now_iso
 from winutil import IS_WINDOWS, CREATE_NO_WINDOW, prevent_sleep
@@ -120,7 +121,7 @@ def filter_args(job: dict[str, Any], extra_excludes: list[str] | None = None) ->
     return args
 
 
-def build_args(job: dict[str, Any], *, config_path: Path, rc_port: int, rc_pass: str, log_file: Path, extra_excludes: list[str] | None = None) -> list[str]:
+def build_args(job: dict[str, Any], *, config_path: Path, rc_port: int, rc_pass: str, log_file: Path, extra_excludes: list[str] | None = None, remove_empty_dirs: bool = True) -> list[str]:
     """Arguments after the rclone executable. No secrets here: the login is in the environment, the rc password is
     random and only valid for this one process on localhost."""
     args = [
@@ -137,7 +138,7 @@ def build_args(job: dict[str, Any], *, config_path: Path, rc_port: int, rc_pass:
     limit = bwlimit_value(job["speed"])
     if limit:
         args += ["--bwlimit", limit]
-    if job["mode"] == "move" and job["delete_empty_dirs"]:
+    if job["mode"] == "move" and job["delete_empty_dirs"] and remove_empty_dirs:
         args.append("--delete-empty-src-dirs")
     if job["checksum"]:
         args.append("--checksum")
@@ -149,13 +150,14 @@ def build_args(job: dict[str, Any], *, config_path: Path, rc_port: int, rc_pass:
 def build_env(creds: dict[str, str], obscured: str, base: dict[str, str] | None = None) -> dict[str, str]:
     """Process environment: the parent's, minus any RCLONE_* the user may have set, plus the NC remote definition."""
     env = {key: value for key, value in (base if base is not None else os.environ).items() if not key.upper().startswith("RCLONE_")}
-    env.update({
-        f"RCLONE_CONFIG_{REMOTE}_TYPE": "webdav",
-        f"RCLONE_CONFIG_{REMOTE}_URL": dav_files_url(creds["server"], creds.get("uid") or creds["user"]),
-        f"RCLONE_CONFIG_{REMOTE}_VENDOR": "nextcloud",
-        f"RCLONE_CONFIG_{REMOTE}_USER": creds["user"],
-        f"RCLONE_CONFIG_{REMOTE}_PASS": obscured,
-    })
+    if creds.get("type") == connections.SFTPGO:   # a plain WebDAV server at the root of its URL (SFTPGo), optionally with one access-key header
+        env.update({f"RCLONE_CONFIG_{REMOTE}_TYPE": "webdav", f"RCLONE_CONFIG_{REMOTE}_URL": creds["server"], f"RCLONE_CONFIG_{REMOTE}_VENDOR": "other"})
+        if creds.get("header_name"):
+            env[f"RCLONE_CONFIG_{REMOTE}_HEADERS"] = f"{creds['header_name']},{creds['header_value']}"
+    else:
+        env.update({f"RCLONE_CONFIG_{REMOTE}_TYPE": "webdav", f"RCLONE_CONFIG_{REMOTE}_URL": dav_files_url(creds["server"], creds.get("uid") or creds["user"]),
+                    f"RCLONE_CONFIG_{REMOTE}_VENDOR": "nextcloud"})
+    env.update({f"RCLONE_CONFIG_{REMOTE}_USER": creds["user"], f"RCLONE_CONFIG_{REMOTE}_PASS": obscured})
     return env
 
 
@@ -240,10 +242,14 @@ class RcloneRun:
         self.on_change = on_change
         self._cancel = threading.Event()
         self._rc: RcClient | None = None
+        self._product = connections.product_name(creds)   # "Nextcloud" or "the server", for messages
         self._lock = threading.Lock()
         self._skipped: list[tuple[str, str]] = []
         self._snapshot: dict[str, Any] = {"run_id": run_id, "job_id": job["id"], "job_name": job["name"], "state": "starting", "mode": job["mode"], "dry_run": job["dry_run"],
                                           "started": now_iso(), "bytes": 0, "total_bytes": 0, "speed": 0.0, "eta": None, "files_done": 0, "transferring": [], "errors": 0, "last_error": "", "bwlimit": bwlimit_value(job["speed"]) or "off"}
+
+    def _human(self, text: str) -> str:
+        return humanize_error(text, self._product)
 
     # control
     def cancel(self) -> None:
@@ -290,7 +296,7 @@ class RcloneRun:
         a helper thread so **Cancel works even while the server hangs**."""
         if not self.precheck:
             return None
-        session = NextcloudSession(self.creds["server"], self.creds["user"], self.creds["app_password"], timeout=30, uid=self.creds.get("uid"))
+        session = connections.make_session(self.creds, timeout=30)
         last = ""
         for attempt in range(1, self.PRECHECK_ATTEMPTS + 1):
             box: dict[str, Any] = {}
@@ -301,7 +307,7 @@ class RcloneRun:
                 except NextcloudError as error:
                     box["error"] = error
                 except Exception as error:   # never let a helper thread die silently
-                    box["error"] = NextcloudError(f"Unexpected error while checking Nextcloud: {error}")
+                    box["error"] = NextcloudError(f"Unexpected error while checking {self._product}: {error}")
 
             worker = threading.Thread(target=ask, name="nextpull-precheck", daemon=True)
             worker.start()
@@ -318,7 +324,7 @@ class RcloneRun:
             last = str(error)
             if not getattr(error, "transient", False):
                 break
-            self._log_note("warning", f"Nextcloud pre-check attempt {attempt}/{self.PRECHECK_ATTEMPTS} failed: {last}")
+            self._log_note("warning", f"{self._product[0].upper() + self._product[1:]} pre-check attempt {attempt}/{self.PRECHECK_ATTEMPTS} failed: {last}")
             if attempt < self.PRECHECK_ATTEMPTS and self._cancel.wait(self.PRECHECK_DELAY):
                 return self._finish("cancelled", "Cancelled by you", 0)
         self._log_note("error", last)
@@ -336,7 +342,7 @@ class RcloneRun:
             if self._cancel.is_set() or time.monotonic() > end:
                 process.kill()
                 reader.join(timeout=5)
-                raise RcloneError("Cancelled" if self._cancel.is_set() else "Timed out while listing the Nextcloud folder")
+                raise RcloneError("Cancelled" if self._cancel.is_set() else f"Timed out while listing the folder on {self._product}")
             reader.join(timeout=0.3)
         return subprocess.CompletedProcess(command, process.returncode, box.get("out", ""), box.get("err", ""))
 
@@ -381,7 +387,7 @@ class RcloneRun:
         if failure:
             return failure
         try:
-            obscured = obscure_password(self.rclone, self.creds["app_password"])
+            obscured = obscure_password(self.rclone, self.creds.get("app_password") or self.creds["password"])
         except RcloneError as error:
             return self._finish("failed", str(error), 1)
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -398,8 +404,11 @@ class RcloneRun:
             self.history.add_file(self.run_id, name, 0, "skipped", error=why)
         port, rc_pass = free_port(), secrets.token_urlsafe(18)
         applog.register_secret(rc_pass)
+        for secret in connections.secrets_of(self.creds):
+            applog.register_secret(secret)
         self._rc = RcClient(port, rc_pass)
-        args = build_args(job, config_path=self.config_path, rc_port=port, rc_pass=rc_pass, log_file=self.log_path, extra_excludes=guard or [])
+        args = build_args(job, config_path=self.config_path, rc_port=port, rc_pass=rc_pass, log_file=self.log_path, extra_excludes=guard or [],
+                          remove_empty_dirs=self.creds.get("type") != connections.SFTPGO)   # such a login may not remove folders; the folder itself is never removed anyway
         try:
             process = subprocess.Popen([*self.rclone, *args], env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                        text=True, encoding="utf-8", errors="replace", creationflags=CREATE_NO_WINDOW if IS_WINDOWS else 0)
@@ -468,7 +477,7 @@ class RcloneRun:
                     elif obj not in present:   # copied in an earlier run; this run only removed it from Nextcloud
                         size = self._local_size(obj)
                         present[obj] = size
-                        self.history.add_file(self.run_id, obj, size, "present", finished=now_iso(), deleted=True, error="already downloaded earlier; removed from Nextcloud now")
+                        self.history.add_file(self.run_id, obj, size, "present", finished=now_iso(), deleted=True, error=f"already downloaded earlier; removed from {self._product} now")
                 elif kind == "dry":
                     match = re.search(r"\(size (\d+)\)", text)
                     size = int(match.group(1)) if match else 0
@@ -482,7 +491,7 @@ class RcloneRun:
                     general.append(text)
             if events:
                 last = (next(iter(file_errors.values()), "") or next(iter(delete_errors.values()), "") or (general[-1] if general else ""))
-                self._update(files_done=len(done) + len(present), errors=len(file_errors) + len(delete_errors), last_error=humanize_error(last) if last else "")
+                self._update(files_done=len(done) + len(present), errors=len(file_errors) + len(delete_errors), last_error=self._human(last) if last else "")
 
         while process.poll() is None:
             now = self.clock()
@@ -539,9 +548,9 @@ class RcloneRun:
     def _conclude(self, code: int | None, outcome: dict[str, Any], tail_lines: list[str]) -> dict[str, Any]:
         file_errors, delete_errors = outcome["file_errors"], outcome["delete_errors"]
         for name, text in file_errors.items():
-            self.history.add_file(self.run_id, name, 0, "error", error=humanize_error(text))
+            self.history.add_file(self.run_id, name, 0, "error", error=self._human(text))
         for name, text in delete_errors.items():
-            self.history.set_file_note(self.run_id, name, f"Downloaded, but could not be deleted on Nextcloud: {humanize_error(text)}")
+            self.history.set_file_note(self.run_id, name, f"Downloaded, but could not be deleted on {self._product}: {self._human(text)}")
         if code not in (0, None) and not self.log_path.is_file() and tail_lines:   # rclone failed before writing its log (e.g. invalid options): keep what it said
             for line in tail_lines:
                 self._log_note("error", line)
@@ -556,7 +565,7 @@ class RcloneRun:
         if got:
             parts.append(f"{got} file(s) {'checked (dry-run)' if dry else 'transferred'}")
         if present:
-            parts.append(f"{present} already downloaded earlier and removed from Nextcloud")
+            parts.append(f"{present} already downloaded earlier and removed from {self._product}")
         if skipped:
             parts.append(f"{skipped} skipped because their names clash with another file on this disk")
         summary = ", ".join(parts)
@@ -565,17 +574,17 @@ class RcloneRun:
             if file_errors:
                 name, text = next(iter(file_errors.items()))
                 more = f" (and {len(file_errors) - 1} more)" if len(file_errors) > 1 else ""
-                return f"{name}: {humanize_error(text)}{more}"
+                return f"{name}: {self._human(text)}{more}"
             if delete_errors:
                 name, text = next(iter(delete_errors.items()))
                 more = f" (and {len(delete_errors) - 1} more)" if len(delete_errors) > 1 else ""
-                return f"{len(delete_errors)} file(s) downloaded but not deleted on Nextcloud, e.g. {name}: {humanize_error(text)}{more}"[:300]
+                return f"{len(delete_errors)} file(s) downloaded but not deleted on {self._product}, e.g. {name}: {self._human(text)}{more}"[:300]
             if outcome["general"]:
-                text = humanize_error(outcome["general"][-1])
+                text = self._human(outcome["general"][-1])
             elif tail_lines:
-                text = humanize_error(re.sub(r"^\S+ \S+ [A-Z]+: ", "", tail_lines[-1]))
+                text = self._human(re.sub(r"^\S+ \S+ [A-Z]+: ", "", tail_lines[-1]))
             else:
-                text = exit_message(code)
+                text = exit_message(code).replace("Nextcloud", self._product)
             return text[:1].upper() + text[1:]
 
         if outcome["quit"] == "cancelled":

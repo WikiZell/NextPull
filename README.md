@@ -17,6 +17,7 @@ It replaces a hand-written nightly `rclone move` script with something you can s
   minimum file age, include/exclude patterns, checksums, dry run, catch-up for missed runs.
 - **Live view**: progress, speed, ETA per file, change the speed limit or cancel while it runs.
 - **History and logs**: every run including *missed* and *skipped* ones, per-file results, the raw rclone log.
+- **Other servers**: besides Nextcloud, pull from an **SFTPGo / WebDAV server** with a user name and password (optional access key, invite code, login tested before saving). Same jobs, same safety rules.
 - **Problems page**: plain-language list of what failed and what to do, a one-click checkup (rclone, login, folders, disk space, scheduler),
   a searchable application log and **Create report**: a redacted zip (no passwords; names hidden by default) to send when you need help.
 - **Statistics**: GB per day, average speed, success rate, run calendar, largest files, per job.

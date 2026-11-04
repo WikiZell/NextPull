@@ -70,7 +70,7 @@ def basic_auth(user: str, password: str) -> str:
     return "Basic " + base64.b64encode(f"{user}:{password}".encode("utf-8")).decode("ascii")
 
 
-def _request(method: str, url: str, *, headers: dict[str, str] | None = None, data: bytes | None = None, timeout: float = 20.0) -> tuple[int, dict[str, str], bytes]:
+def _request(method: str, url: str, *, headers: dict[str, str] | None = None, data: bytes | None = None, timeout: float = 20.0, noun: str = "Nextcloud") -> tuple[int, dict[str, str], bytes]:
     request = urllib.request.Request(url, data=data, method=method, headers={"User-Agent": USER_AGENT, **(headers or {})})
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
@@ -80,7 +80,7 @@ def _request(method: str, url: str, *, headers: dict[str, str] | None = None, da
         return error.code, {key.lower(): value for key, value in (error.headers or {}).items()}, body
     except (urllib.error.URLError, TimeoutError, OSError) as error:
         reason = getattr(error, "reason", error)
-        raise NextcloudError(f"Cannot reach the Nextcloud server ({reason})", transient=True) from error
+        raise NextcloudError(f"Cannot reach the {noun} server ({reason})" if noun != "server" else f"Cannot reach the server ({reason})", transient=True) from error
 
 
 # ---------------------------------------------------------------------------------------------- Login Flow v2
@@ -160,6 +160,10 @@ def parse_propfind(xml_bytes: bytes, base_path: str) -> list[Entry]:
 
 
 class NextcloudSession:
+    label = "Nextcloud"                  # start of a sentence
+    noun = "Nextcloud"                   # inside a sentence
+    fix = "Disconnect and connect again."
+
     def __init__(self, server: str, user: str, app_password: str, timeout: float = 30.0, uid: str | None = None) -> None:
         # ``user`` is the *login name* (what was typed at sign-in: a user name or an e-mail address) and goes into the Basic auth.
         # ``uid`` is Nextcloud's internal user id, which is what the WebDAV path needs. They differ when someone signs in with an
@@ -192,13 +196,13 @@ class NextcloudSession:
         if ".." in clean.split("/"):
             raise NextcloudError("Invalid folder")
         url = self.files_url + ("/" + urllib.parse.quote(clean, safe="/") if clean else "") + "/"
-        status, _, body = _request("PROPFIND", url, headers={**self._auth, "Depth": "1", "Content-Type": "application/xml"}, data=PROPFIND_BODY.encode("utf-8"), timeout=self.timeout)
+        status, _, body = _request("PROPFIND", url, headers={**self._auth, "Depth": "1", "Content-Type": "application/xml"}, data=PROPFIND_BODY.encode("utf-8"), timeout=self.timeout, noun=self.noun)
         if status in (401, 403):
-            raise NextcloudError("Nextcloud rejected the saved login. Disconnect and connect again.")
+            raise NextcloudError(f"{self.label} rejected the saved login. {self.fix}")
         if status == 404:
             raise NextcloudError(f"Folder not found: /{clean}")
         if status not in (200, 207):
-            raise NextcloudError(f"Nextcloud answered HTTP {status} for the folder listing")
+            raise NextcloudError(f"{self.label} answered HTTP {status} for the folder listing")
         base_path = urllib.parse.urlsplit(self.files_url).path
         entries = parse_propfind(body, base_path)
         children = [entry for entry in entries if entry.path != clean]
@@ -212,15 +216,15 @@ class NextcloudSession:
         if ".." in clean.split("/"):
             raise NextcloudError("Invalid folder")
         url = self.files_url + ("/" + urllib.parse.quote(clean, safe="/") if clean else "")
-        status, headers, body = _request("PROPFIND", url, headers={**self._auth, "Depth": "0", "Content-Type": "application/xml"}, data=PROPFIND_BODY.encode("utf-8"), timeout=self.timeout)
+        status, headers, body = _request("PROPFIND", url, headers={**self._auth, "Depth": "0", "Content-Type": "application/xml"}, data=PROPFIND_BODY.encode("utf-8"), timeout=self.timeout, noun=self.noun)
         if status in (401, 403):
-            raise NextcloudError("Nextcloud rejected the saved login. Disconnect and connect again.")
+            raise NextcloudError(f"{self.label} rejected the saved login. {self.fix}")
         if status == 404:
-            raise NextcloudError(f"The Nextcloud folder /{clean} was not found")
+            raise NextcloudError(f"The {self.noun} folder /{clean} was not found")
         if status in (429, 500, 502, 503, 504):
-            raise NextcloudError(f"Nextcloud is not available right now (HTTP {status}); it may be in maintenance", transient=True)
+            raise NextcloudError(f"{self.label} is not available right now (HTTP {status}); it may be in maintenance", transient=True)
         if status != 207:
-            raise NextcloudError(f"The server did not answer like Nextcloud WebDAV (HTTP {status}); a maintenance or proxy page may be in the way", transient=True)
+            raise NextcloudError(f"The server did not answer like {self.noun} WebDAV (HTTP {status}); a maintenance or proxy page may be in the way", transient=True)
         try:
             root = ET.fromstring(body)
         except ET.ParseError as error:
@@ -251,3 +255,32 @@ class NextcloudSession:
         except NextcloudError:
             return False
         return status in (200, 204)
+
+
+class WebdavSession(NextcloudSession):
+    """A plain WebDAV server at the root of its URL (SFTPGo's WebDAV service, for example): HTTP Basic login with a user name and password,
+    optionally one extra request header (an access key that a reverse proxy in front of the server may require). It never uploads, renames
+    or creates anything: the same read/list/delete calls as :class:`NextcloudSession`, minus everything that is Nextcloud-only (OCS, app passwords)."""
+    label = "The server"
+    noun = "server"
+    fix = "Edit the connection in Settings."
+
+    def __init__(self, server: str, user: str, password: str, timeout: float = 30.0, headers: dict[str, str] | None = None) -> None:
+        super().__init__(server, user, password, timeout=timeout)
+        self.extra_headers = dict(headers or {})
+
+    @property
+    def _auth(self) -> dict[str, str]:
+        return {**self.extra_headers, "Authorization": basic_auth(self.user, self.password)}
+
+    @property
+    def files_url(self) -> str:
+        return self.server
+
+    def user_info(self) -> dict[str, Any]:
+        """There is no OCS here: a listing of the root proves the login works. Quota is unknown."""
+        self.list_dir("")
+        return {"id": self.user, "display_name": self.user, "email": "", "quota_used": None, "quota_total": None}
+
+    def revoke(self) -> bool:
+        return False

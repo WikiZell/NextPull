@@ -5,7 +5,8 @@ A job downloads **one Nextcloud folder** to **one folder on this PC** on a sched
 | Option | Meaning |
 | --- | --- |
 | **Name** | Shown everywhere. |
-| **Nextcloud folder** | The source. Use *Browse Nextcloud* to pick it. Sub-folders are included. |
+| **Connect to** | Which server the job pulls from (shown when you have more than one: Nextcloud or an [other server](Other-Servers)). |
+| **Folder to download** | The source on that server. Use *Browse* to pick it. Sub-folders are included. |
 | **Destination folder** | Where files are written on this PC. It is created if it does not exist. |
 | **Copy / Move** | Copy keeps the files on Nextcloud. Move deletes each file on Nextcloud after rclone verified the download. See [Move mode and safety](Move-Mode-and-Safety). |
 | **Weekdays and Start time** | When the job starts. See [Scheduling and speed](Scheduling-and-Speed). |

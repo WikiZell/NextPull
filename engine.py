@@ -151,16 +151,18 @@ class Engine:
                 return
             if item.get("dry_run") is not None:
                 job["dry_run"] = bool(item["dry_run"])
-            creds, rclone = self.secrets.load(), self.rclone_finder()
+            conn_id = job.get("connection") or "nextcloud"
+            creds, rclone = self.secrets.creds_for(conn_id), self.rclone_finder()
             log_dir = self.logs_dir
             log_dir.mkdir(parents=True, exist_ok=True)
             run_id = self.history.start_run(job, item["trigger"])
             log_path = log_dir / f"run-{run_id}.jsonl"
             self.history.set_log_file(run_id, str(log_path))
             if not creds:
-                _log.error("run %s cannot start: not connected to Nextcloud", run_id)
-                self.history.finish_run(run_id, "failed", "Not connected to Nextcloud. Open Settings and connect.")
-                result["message"] = "Not connected to Nextcloud"
+                note = "Not connected to Nextcloud. Open Settings and connect." if conn_id == "nextcloud" else f"The connection '{conn_id}' of this job no longer exists. Edit the job or add the connection again in Settings."
+                _log.error("run %s cannot start: no login for connection %s", run_id, conn_id)
+                self.history.finish_run(run_id, "failed", note)
+                result["message"] = note
                 return
             if not rclone:
                 _log.error("run %s cannot start: rclone not found", run_id)

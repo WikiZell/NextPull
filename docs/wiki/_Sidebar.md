@@ -4,6 +4,8 @@
 - [Installation](Installation)
 - [Getting started](Getting-Started)
 - [Jobs reference](Jobs-Reference)
+- [Other servers (SFTPGo)](Other-Servers)
+- [SFTPGo server setup](SFTPGo-Server-Setup)
 - [Scheduling and speed](Scheduling-and-Speed)
 - [Move mode and safety](Move-Mode-and-Safety)
 - [History and statistics](History-and-Statistics)

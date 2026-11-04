@@ -34,6 +34,7 @@ destination folder + start time + speed limit (+ filters). The app keeps history
 | `rclone_runner.py` | Find rclone, build args/env, drive one run through rclone's rc API + JSON log (`RcloneRun`). |
 | `applog.py` | The application log (`app.log`, rotating, in-memory ring when `data_dir=None`), **redaction** (`redact`, `register_secret`), excepthooks. |
 | `diagnostics.py` | Problem grouping + plain-language hints, the self-test, `Scrubber` and `build_report` (the zip users send). |
+| `connections.py` | Connections (Nextcloud + SFTPGo/WebDAV): address rules, records, public view, sessions, discovery, invite codes. See docs/CONNECTIONS.md. |
 | `nc_client.py` | Login Flow v2, WebDAV PROPFIND listing, OCS user info, revoke. stdlib only. |
 | `store.py` | `clean_job`/`clean_settings`, `ConfigStore` (JSON), `SecretStore` (DPAPI), `HistoryDb` (SQLite runs/files/stats). |
 | `winutil.py` | DPAPI, autostart (HKCU Run), watchdog (schtasks), single instance + wake event, sleep prevention, free space. |
@@ -85,6 +86,10 @@ Keep these; add a test when you touch the code that enforces them.
 14. **Pre-check** the server (`check_folder`) before rclone; failures are plain-language messages. Keep `RcloneRun.PRECHECK_*` and the cancel-responsive helper thread.
 15. **History stays honest**: one row per file, delete failures are a note on a downloaded file, `present` for already-downloaded files, never show `.partial` temp names.
 16. **Release rclone's pipes** after each run (the ResourceWarning-clean test run guards this).
+19. **Connections**: a job names its connection (`job["connection"]`, default `nextcloud`). Passwords and access keys live only in `SecretStore` (`credentials.bin` / `connections.bin`, DPAPI), never in
+    settings, jobs, logs, reports or `public_view`; register every secret with `applog.register_secret`. `http://` is accepted only for local-network hosts (`normalize_webdav_url`), TLS is always verified,
+    never `--no-check-certificate`. A WebDAV-root login only lists, downloads and deletes files: no upload, rename or mkdir, and no `--delete-empty-src-dirs`. A job whose connection is missing fails; it never
+    falls back to another server.
 18. **Move never removes the job's own source folder**: rclone's `--delete-empty-src-dirs` only removes emptied *sub*-folders; the root of the job stays, even when empty
     (pinned against the real rclone in `tests/test_real_rclone.py`). Never add a code path that deletes the source root.
 17. **Logs and reports never contain secrets**: log through `applog.get_logger(...)` only (the redacting filter sits on the handlers; a filter on the

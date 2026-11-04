@@ -3,7 +3,7 @@
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-const S = {page: "dashboard", status: null, jobs: [], settings: {}, boot: {}, filesPath: "", statsDays: 30, historyJob: "", sig: {}, nowKey: "", login: null};
+const S = {page: "dashboard", status: null, jobs: [], settings: {}, boot: {}, filesPath: "", filesConn: "", conns: [], statsDays: 30, historyJob: "", sig: {}, nowKey: "", login: null};
 let api = null;
 
 // ---------------------------------------------------------------------------------------------- formatting
@@ -43,6 +43,13 @@ function duration(run) {
   if (!run.started || !run.finished) return "";
   return fmtDur((new Date(run.finished) - new Date(run.started)) / 1000);
 }
+
+async function loadConns() {
+  const r = await api.list_connections();
+  S.conns = (r && r.connections) || [];
+  return S.conns;
+}
+const connLabel = id => ((S.conns.find(c => c.id === id) || {}).label) || (id === "nextcloud" ? "Nextcloud" : "(missing connection)");
 
 // ------------------------------------------------------------------------------------------------- plumbing
 function toast(text, kind = "") {
@@ -136,7 +143,7 @@ function updateDashboard() {
   const status = S.status;
   if (!status) return;
   const notices = [];
-  if (!status.connected) notices.push(`<div class="notice bad">Not connected to Nextcloud. <a href="#" data-goto="settings">Open Settings to connect</a>.</div>`);
+  if (!status.connected) notices.push(`<div class="notice bad">No server is connected yet. <a href="#" data-goto="settings">Open Settings to connect</a>.</div>`);
   if (!status.rclone_found) notices.push(`<div class="notice bad">rclone was not found. Put <b>rclone.exe</b> in the <b>tools\\rclone</b> folder next to NextPull, or set its path in Settings.</div>`);
   if (status.update) notices.push(`<div class="notice info">NextPull <b>${esc(status.update.version)}</b> is available (you have ${esc((S.boot.app || {}).version)}). <a href="#" data-update="page">What is new</a> - <a href="#" data-update="skip">Skip this version</a></div>`);
   if (status.problem_count) notices.push(`<div class="notice">${status.problem_count} recent run(s) had problems. <a href="#" data-goto="diagnostics">See what went wrong</a>.</div>`);
@@ -199,8 +206,8 @@ function speedText(job) {
 function jobCard(job) {
   return `<div class="card job" data-job="${esc(job.id)}">
     <div class="top"><label class="switch" title="Enable or pause"><input type="checkbox" data-toggle="${esc(job.id)}" ${job.enabled ? "checked" : ""}><i></i></label>
-      <h2>${esc(job.name)}</h2><span class="badge ${job.mode === "move" ? "warn" : ""}">${job.mode === "move" ? "Move (deletes on Nextcloud after download)" : "Copy"}</span>${job.dry_run ? '<span class="badge">Dry run</span>' : ""}${job.running ? badge("running") : ""}</div>
-    <div class="path">Nextcloud: /${esc(job.source)} &rarr; ${esc(job.dest)}</div>
+      <h2>${esc(job.name)}</h2><span class="badge ${job.mode === "move" ? "warn" : ""}">${job.mode === "move" ? `Move (deletes on ${job.connection && job.connection !== "nextcloud" ? "the server" : "Nextcloud"} after download)` : "Copy"}</span>${job.dry_run ? '<span class="badge">Dry run</span>' : ""}${job.running ? badge("running") : ""}</div>
+    <div class="path">${esc(job.connection_label || "Nextcloud")}: /${esc(job.source)} &rarr; ${esc(job.dest)}</div>
     <div class="kv"><span>${esc(job.schedule_text)}</span><span>Speed: ${speedText(job)}</span><span>${job.transfers} file(s) at once, ${job.streams} stream(s)</span><span>${job.next_run && job.enabled ? `Next: ${fmtTime(job.next_run)} (${fmtIn(job.next_run)})` : "Not scheduled"}</span>
       <span>${job.last_run ? `Last: ${esc(STATE_LABEL[job.last_run.state] || job.last_run.state)} ${fmtTime(job.last_run.started)}` : "Never run"}</span></div>
     <div class="row"><button class="btn small" data-run="${esc(job.id)}" ${job.running ? "disabled" : ""}>Run now</button><button class="btn ghost small" data-dry="${esc(job.id)}">Dry run</button>
@@ -220,19 +227,25 @@ document.addEventListener("change", async event => {
 });
 $("job-new").addEventListener("click", () => openEditor(null));
 
-function blankJob(source = "") {
-  return {id: "", name: "", enabled: true, source, mode: "copy", dest: "", schedule: {days: [0, 1, 2, 3, 4, 5, 6], time: "02:00", stop_by: ""}, catch_up: true, catch_up_hours: 12,
+function blankJob(source = "", connection = "") {
+  return {id: "", name: "", enabled: true, connection: connection || (S.conns[0] && S.conns[0].id) || "nextcloud", source, mode: "copy", dest: "", schedule: {days: [0, 1, 2, 3, 4, 5, 6], time: "02:00", stop_by: ""}, catch_up: true, catch_up_hours: 12,
           speed: {limit_mbps: 0, timetable: ""}, transfers: 1, streams: 4, min_age_minutes: 5, excludes: [], includes: [], checksum: false, dry_run: false, delete_empty_dirs: true, retries: 3};
 }
-function openEditor(job, presetSource = "") {
+async function openEditor(job, presetSource = "", presetConn = "") {
+  await loadConns();
   const isNew = !job;
-  job = job ? structuredClone(job) : blankJob(presetSource);
+  job = job ? structuredClone(job) : blankJob(presetSource, presetConn);
+  job.connection = job.connection || "nextcloud";
+  const connOptions = S.conns.some(c => c.id === job.connection) ? S.conns : [...S.conns, {id: job.connection, label: connLabel(job.connection)}];
+  const connSelect = connOptions.length > 1 || job.connection !== "nextcloud" ? `<label>Connect to<select id="je-conn">${connOptions.map(c => `<option value="${esc(c.id)}" ${c.id === job.connection ? "selected" : ""}>${esc(c.label)}</option>`).join("")}</select></label>` : "";
+  const currentConn = () => ($("je-conn") ? $("je-conn").value : job.connection);
   const overlay = modal(`<div class="modal-head"><h2>${isNew ? "New job" : "Edit job"}</h2><button class="close" data-close>&times;</button></div>
   <div class="form">
     <label>Name<input id="je-name" value="${esc(job.name)}" placeholder="Night pull" maxlength="60"></label>
-    <label>Nextcloud folder to download<div class="row" style="flex-wrap:nowrap"><input id="je-source" value="${esc(job.source)}" placeholder="e.g. Documents/Photos"><button class="btn ghost" id="je-browse" type="button">Browse Nextcloud...</button></div></label>
-    <label>Destination folder on this PC<div class="row" style="flex-wrap:nowrap"><input id="je-dest" value="${esc(job.dest)}" placeholder="D:\\Downloads\\Nextcloud"><button class="btn ghost" id="je-pick" type="button">Choose...</button></div><small id="je-destinfo"></small></label>
-    <div><h3>What to do with the files</h3><div class="seg" id="je-mode"><button type="button" data-mode="copy" class="${job.mode === "copy" ? "on" : ""}">Copy (keep on Nextcloud)</button><button type="button" data-mode="move" class="${job.mode === "move" ? "on" : ""}">Move (delete on Nextcloud after a verified download)</button></div></div>
+    ${connSelect}
+    <label>Folder to download<div class="row" style="flex-wrap:nowrap"><input id="je-source" value="${esc(job.source)}" placeholder="e.g. Documents/Photos"><button class="btn ghost" id="je-browse" type="button">Browse...</button></div></label>
+    <label>Destination folder on this PC<div class="row" style="flex-wrap:nowrap"><input id="je-dest" value="${esc(job.dest)}" placeholder="D:\\Downloads\\NextPull"><button class="btn ghost" id="je-pick" type="button">Choose...</button></div><small id="je-destinfo"></small></label>
+    <div><h3>What to do with the files</h3><div class="seg" id="je-mode"><button type="button" data-mode="copy" class="${job.mode === "copy" ? "on" : ""}">Copy (keep at the source)</button><button type="button" data-mode="move" class="${job.mode === "move" ? "on" : ""}">Move (delete on Nextcloud after a verified download)</button></div></div>
     <div><h3>When</h3><div class="chips" id="je-days">${DAYS.map((d, i) => `<button type="button" class="chip ${job.schedule.days.includes(i) ? "on" : ""}" data-day="${i}">${d}</button>`).join("")}</div></div>
     <div class="cols"><label>Start time<input id="je-time" type="time" value="${esc(job.schedule.time)}"></label>
       <label>Stop by <small>(optional, ends the run)</small><input id="je-stop" type="time" value="${esc(job.schedule.stop_by)}"></label>
@@ -244,14 +257,14 @@ function openEditor(job, presetSource = "") {
       <div class="cols"><label>Exclude patterns <small>one per line, e.g. *.log. An exclude always wins over an include.</small><textarea id="je-excludes">${esc(job.excludes.join("\n"))}</textarea></label><label>Only include <small>one per line, e.g. *.mkv. Everything else is skipped.</small><textarea id="je-includes">${esc(job.includes.join("\n"))}</textarea></label></div>
       <label>Speed timetable <small>replaces the limit above, e.g. 08:00,2M 23:00,off (checked when you save)</small><input id="je-timetable" value="${esc(job.speed.timetable)}"></label>
       <label class="check"><input id="je-checksum" type="checkbox" ${job.checksum ? "checked" : ""}><span>Compare checksums<small>Slower; use if the server provides them.</small></span></label>
-      <label class="check"><input id="je-emptydirs" type="checkbox" ${job.delete_empty_dirs ? "checked" : ""}><span>Remove empty folders on Nextcloud after a move</span></label>
+      <label class="check"><input id="je-emptydirs" type="checkbox" ${job.delete_empty_dirs ? "checked" : ""}><span>Remove empty folders at the source after a move<small>Not used with SFTPGo connections (that login may not remove folders).</small></span></label>
       <label class="check"><input id="je-dry" type="checkbox" ${job.dry_run ? "checked" : ""}><span>Always dry run<small>Lists what would happen, transfers nothing.</small></span></label></div></details>
     <div class="row"><button class="btn" id="je-save">Save job</button><button class="btn ghost" data-close>Cancel</button></div>
   </div>`, true);
   let mode = job.mode;
   overlay.querySelectorAll("[data-mode]").forEach(b => b.addEventListener("click", () => { mode = b.dataset.mode; overlay.querySelectorAll("[data-mode]").forEach(x => x.classList.toggle("on", x === b)); }));
   overlay.querySelectorAll("[data-day]").forEach(b => b.addEventListener("click", () => b.classList.toggle("on")));
-  overlay.querySelector("#je-browse").addEventListener("click", () => pickRemote($("je-source").value, path => { $("je-source").value = path; if (!$("je-name").value) $("je-name").value = path.split("/").pop() || "Nextcloud"; }));
+  overlay.querySelector("#je-browse").addEventListener("click", () => pickRemote($("je-source").value, path => { $("je-source").value = path; if (!$("je-name").value) $("je-name").value = path.split("/").pop() || connLabel(currentConn()); }, currentConn()));
   overlay.querySelector("#je-pick").addEventListener("click", async () => { const r = await call("pick_folder", $("je-dest").value); if (r.ok && r.path) { $("je-dest").value = r.path; checkDest(); } });
   const checkDest = async () => {
     const value = $("je-dest").value.trim();
@@ -263,24 +276,24 @@ function openEditor(job, presetSource = "") {
   checkDest();
   overlay.querySelector("#je-save").addEventListener("click", async () => {
     const lines = id => $(id).value.split("\n").map(x => x.trim()).filter(Boolean);
-    const payload = {id: job.id, name: $("je-name").value, enabled: job.enabled, source: $("je-source").value, mode, dest: $("je-dest").value,
+    const payload = {id: job.id, name: $("je-name").value, enabled: job.enabled, connection: currentConn(), source: $("je-source").value, mode, dest: $("je-dest").value,
       schedule: {days: [...overlay.querySelectorAll("[data-day].on")].map(b => Number(b.dataset.day)), time: $("je-time").value || "02:00", stop_by: $("je-stop").value || ""},
       catch_up: $("je-catchup").checked, catch_up_hours: Number($("je-catchhours").value || 12), speed: {limit_mbps: Number($("je-speed").value || 0), timetable: $("je-timetable").value},
       transfers: Number($("je-transfers").value || 1), streams: Number($("je-streams").value || 4), min_age_minutes: Number($("je-minage").value || 0), retries: Number($("je-retries").value || 0),
       excludes: lines("je-excludes"), includes: lines("je-includes"), checksum: $("je-checksum").checked, delete_empty_dirs: $("je-emptydirs").checked, dry_run: $("je-dry").checked};
-    if (mode === "move" && !payload.dry_run && !await ask("Move deletes the files on Nextcloud after they are downloaded and verified. Use this job in Move mode?", "Yes, use Move")) return;
+    if (mode === "move" && !payload.dry_run && !await ask("Move deletes the files at the source after they are downloaded and verified. Use this job in Move mode?", "Yes, use Move")) return;
     const r = await call("save_job", payload);
     if (r.ok) { overlay.remove(); toast("Job saved", "ok"); if (S.page === "jobs") loadJobs(); else if (S.page === "dashboard") loadDashboard(); }
   });
 }
 
 // ------------------------------------------------------------------------------ Nextcloud folder picker
-function pickRemote(startPath, onPick) {
-  const overlay = modal(`<div class="modal-head"><h2>Choose a Nextcloud folder</h2><button class="close" data-close>&times;</button></div><div class="crumbs" id="pk-crumbs"></div><div class="list" id="pk-list"></div>
+function pickRemote(startPath, onPick, conn = "nextcloud") {
+  const overlay = modal(`<div class="modal-head"><h2>Choose a folder</h2><button class="close" data-close>&times;</button></div><div class="crumbs" id="pk-crumbs"></div><div class="list" id="pk-list"></div>
     <div class="row between"><span class="muted">Selected: <b id="pk-sel">/</b></span><div class="row"><button class="btn" id="pk-ok">Use this folder</button><button class="btn ghost" data-close>Cancel</button></div></div>`, false, 40);
   let current = String(startPath || "").split("/").slice(0, -0).join("/");
   const load = async path => {
-    const r = await call("browse", path);
+    const r = await call("browse", path, conn);
     if (!r.ok) return;
     current = r.path;
     $("pk-sel").textContent = "/" + current;
@@ -299,7 +312,12 @@ function crumbsHtml(path) {
 
 // ----------------------------------------------------------------------------------------------- files page
 async function loadFiles(path = S.filesPath) {
-  const r = await api.browse(path);
+  await loadConns();
+  if (!S.conns.length) { $("files-conn-wrap").hidden = true; $("files-list").innerHTML = '<div class="empty">No server is connected yet. Open Settings to connect.</div>'; $("files-crumbs").innerHTML = ""; return; }
+  if (!S.conns.some(c => c.id === S.filesConn)) { S.filesConn = S.conns[0].id; path = ""; }
+  $("files-conn-wrap").hidden = S.conns.length < 2;
+  $("files-conn").innerHTML = S.conns.map(c => `<option value="${esc(c.id)}" ${c.id === S.filesConn ? "selected" : ""}>${esc(c.label)}</option>`).join("");
+  const r = await api.browse(path, S.filesConn);
   if (!r.ok) { $("files-list").innerHTML = `<div class="empty">${esc(r.error || "Could not load")}</div>`; return; }
   S.filesPath = r.path;
   $("files-crumbs").innerHTML = crumbsHtml(r.path);
@@ -309,7 +327,8 @@ $("page-files").addEventListener("click", event => {
   const d = event.target.closest("[data-fpath]"); if (d) loadFiles(d.dataset.fpath);
   const c = event.target.closest("[data-crumb]"); if (c) loadFiles(c.dataset.crumb);
 });
-$("files-make-job").addEventListener("click", () => openEditor(null, S.filesPath));
+$("files-make-job").addEventListener("click", () => openEditor(null, S.filesPath, S.filesConn));
+$("files-conn").addEventListener("change", event => { S.filesConn = event.target.value; S.filesPath = ""; loadFiles(""); });
 
 // -------------------------------------------------------------------------------------------------- history
 async function loadHistory() {
@@ -385,7 +404,7 @@ $("stats-range").addEventListener("click", event => {
 
 // ------------------------------------------------------------------------------------------------- settings
 async function loadSettings() {
-  const [boot, s, upd] = await Promise.all([api.bootstrap(), api.get_settings(), api.update_info()]);
+  const [boot, s, upd] = await Promise.all([api.bootstrap(), api.get_settings(), api.update_info(), loadConns()]);
   S.boot = boot; S.settings = s.settings || {}; S.upd = upd;
   const c = boot.connection || {}, st = S.settings;
   const login = S.login || {state: "idle"};
@@ -396,6 +415,9 @@ async function loadSettings() {
     : `<div class="stack">${login.state === "error" || login.state === "cancelled" ? `<div class="notice bad">${esc(login.message)}</div>` : ""}<label>Nextcloud address<input id="st-server" placeholder="cloud.example.com"></label><div><button class="btn" id="st-connect">Connect with your browser</button></div><div class="hint">You sign in on your Nextcloud page. NextPull only receives an app password (it never sees your real password) and stores it encrypted for this Windows user.</div></div>`;
   const toggle = (id, label, hint, on) => `<label class="check"><input type="checkbox" id="${id}" ${on ? "checked" : ""}><span>${label}<small>${hint}</small></span></label>`;
   $("settings-body").innerHTML = `<div class="card stack"><h2>Nextcloud connection</h2>${connection}</div>
+    <div class="card stack"><div class="row between"><h2>Other servers (SFTPGo / WebDAV)</h2><button class="btn ghost small" id="st-addserver">Add a server</button></div>
+      ${serversHtml(S.conns)}
+      <div class="hint">For a server you were given access to with a user name and password. Jobs can pull from it just like from Nextcloud. NextPull only reads and deletes (after a verified copy); it never uploads.</div></div>
     <div class="card stack"><h2>Behaviour</h2>
       ${toggle("st-tray", "Keep running in the tray when the window is closed", "Downloads continue in the background. Use Quit from the tray menu to stop NextPull.", st.close_to_tray)}
       ${toggle("st-notify", "Windows notifications", "When a run transfers files or fails.", st.notifications)}
@@ -421,7 +443,49 @@ function updateHtml(u) {
     : u.latest ? '<span class="badge ok">Up to date</span>' : "";
   return `<div>You have version <b>${esc(u.current)}</b>. ${when}</div>${state}`;
 }
+function serversHtml(conns) {
+  const others = (conns || []).filter(c => c.type !== "nextcloud");
+  if (!others.length) return '<div class="empty">No other server yet.</div>';
+  return others.map(c => `<div class="srv"><div class="grow"><b>${esc(c.label)}</b> <span class="badge">${esc(c.type_label)}</span>${c.has_access_key ? ' <span class="badge ok">access key</span>' : ""}<div class="hint mono">${esc(c.server)} - ${esc(c.user)}</div></div>
+    <button class="btn ghost small" data-srv-test="${esc(c.id)}">Test</button><button class="btn ghost small" data-srv-del="${esc(c.id)}">Remove</button></div>`).join("");
+}
+function openAddServer() {
+  const overlay = modal(`<div class="modal-head"><h2>Add a server</h2><button class="close" data-close>&times;</button></div>
+  <div class="form">
+    <label>Invite code <small>optional: paste it to fill in the address and access key</small><div class="row" style="flex-wrap:nowrap"><input id="as-invite" placeholder="nextpull-invite:..."><button class="btn ghost" id="as-useinvite" type="button">Use code</button></div></label>
+    <label>Server address<div class="row" style="flex-wrap:nowrap"><input id="as-server" placeholder="pull.example.com"><button class="btn ghost" id="as-detect" type="button">Check</button></div><small id="as-found"></small></label>
+    <div class="cols"><label>User name<input id="as-user" autocomplete="off"></label><label>Password<input id="as-pass" type="password" autocomplete="new-password"></label></div>
+    <details><summary><b>Access key</b> <span class="muted">(only if the administrator gave you one)</span></summary><div class="cols" style="margin-top:10px"><label>Header name<input id="as-hname" placeholder="X-Pull-Key"></label><label>Key<input id="as-hvalue" type="password" autocomplete="off"></label></div></details>
+    <label>Name for this connection <small>optional</small><input id="as-label" maxlength="60"></label>
+    <div class="hint">NextPull tests the login before saving. The password and key are stored encrypted for this Windows user and never shown again.</div>
+    <div class="row"><button class="btn" id="as-save">Test and save</button><button class="btn ghost" data-close>Cancel</button></div></div>`);
+  const found = overlay.querySelector("#as-found");
+  overlay.querySelector("#as-useinvite").addEventListener("click", async () => {
+    const r = await call("read_invite", $("as-invite").value);
+    if (!r.ok) return;
+    $("as-server").value = r.server; if (r.user) $("as-user").value = r.user; if (r.label) $("as-label").value = r.label;
+    $("as-hname").value = r.header_name || ""; $("as-hvalue").value = r.header_value || "";
+    if (r.header_name) overlay.querySelector("details").open = true;
+    found.textContent = "Invite code applied. Enter your password.";
+  });
+  overlay.querySelector("#as-detect").addEventListener("click", async () => {
+    found.textContent = "Checking...";
+    const r = await call("discover_server", $("as-server").value);
+    found.textContent = !r.ok ? `${r.error || "No answer"}${r.hint ? " " + r.hint : ""}`
+      : r.type === "nextcloud" ? "This is a Nextcloud server: connect to it with the Nextcloud card instead (browser sign-in)."
+      : `${r.product || "WebDAV server"}${r.version ? " " + r.version : ""} found. Enter your user name and password.`;
+  });
+  overlay.querySelector("#as-save").addEventListener("click", async () => {
+    const b = overlay.querySelector("#as-save"); b.disabled = true; b.textContent = "Testing...";
+    const r = await call("add_connection", {server: $("as-server").value, user: $("as-user").value, password: $("as-pass").value, header_name: $("as-hname").value, header_value: $("as-hvalue").value, label: $("as-label").value});
+    b.disabled = false; b.textContent = "Test and save";
+    if (r.ok) { overlay.remove(); toast("Server added", "ok"); loadSettings(); }
+  });
+}
 function wireSettings() {
+  const addServer = $("st-addserver"); if (addServer) addServer.addEventListener("click", openAddServer);
+  document.querySelectorAll("[data-srv-test]").forEach(b => b.addEventListener("click", async () => { b.disabled = true; const r = await call("test_connection", b.dataset.srvTest); b.disabled = false; if (r.ok) toast(`Connection works (${r.seconds}s)`, "ok"); }));
+  document.querySelectorAll("[data-srv-del]").forEach(b => b.addEventListener("click", async () => { if (!await ask("Remove this server? Its saved password is deleted.", "Remove", true)) return; const r = await call("remove_connection", b.dataset.srvDel); if (r.ok) { toast("Removed", "ok"); loadSettings(); } }));
   const on = (id, fn, evt = "click") => { const el = $(id); if (el) el.addEventListener(evt, fn); };
   const save = async () => {
     const r = await call("save_settings", {close_to_tray: $("st-tray").checked, notifications: $("st-notify").checked, prevent_sleep: $("st-sleep").checked, rclone_path: $("st-rpath").value, history_days: Number($("st-hdays").value), log_days: Number($("st-ldays").value), check_updates: $("st-updates").checked});
@@ -519,6 +583,7 @@ async function start() {
   api = window.pywebview.api;
   const boot = await api.bootstrap();
   S.boot = boot;
+  await loadConns();
   $("foot-version").textContent = `Version ${(boot.app || {}).version || ""}`;
   $("brand-version").textContent = `v${(boot.app || {}).version || ""}`;
   show(params.get("page") || "dashboard");

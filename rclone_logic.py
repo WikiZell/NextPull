@@ -102,8 +102,14 @@ HTTP_REASONS = {"401": "Nextcloud rejected the login (HTTP 401). Disconnect and 
                 "503": "Nextcloud is unavailable or in maintenance (HTTP 503)", "504": "gateway timeout in front of Nextcloud (HTTP 504)"}
 
 
-def humanize_error(text: str) -> str:
-    """Shorten rclone's wording to what a person can act on; unknown messages are returned trimmed, never lost."""
+def humanize_error(text: str, product: str = "Nextcloud") -> str:
+    """Shorten rclone's wording to what a person can act on; unknown messages are returned trimmed, never lost. ``product`` is how the server is called
+    in the message (``Nextcloud`` or ``the server`` for other WebDAV servers)."""
+    message = _humanize(text)
+    return message if product == "Nextcloud" else message.replace("on Nextcloud", f"on {product}").replace("Nextcloud", product)
+
+
+def _humanize(text: str) -> str:
     t = " ".join(text.split())
     t = re.sub(r'^Failed to create file system for "[^"]*": (read metadata failed: )?', "", t)
     t = re.sub(r"^(Failed to copy|Failed to move|Failed to sync|error reading source root directory): ", "", t)

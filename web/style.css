@@ -120,6 +120,9 @@ td.num,th.num{text-align:right;white-space:nowrap}
 .notice.info{background:var(--blue-bg);color:var(--blue-dark)}
 .notice.bad{background:var(--red-bg);color:var(--red)}
 .hint{font-size:12px;color:var(--muted)}
+.srv{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:9px 0;border-bottom:1px solid #eef1f7}
+.srv:last-child{border:0}
+.srv .grow{flex:1;min-width:200px}
 .count{margin-left:auto;min-width:20px;padding:1px 7px;border-radius:99px;background:#e0605a;color:#fff;font-size:11px;font-weight:750;text-align:center}
 .badge.skip{background:var(--gray-bg);color:#46556f}
 .check-row{display:grid;grid-template-columns:90px minmax(0,1fr);gap:4px 12px;padding:9px 0;border-bottom:1px solid #eef1f7}
