@@ -37,6 +37,13 @@ plain Windows path chosen by the user.
 * The watchdog is a normal per-user scheduled task; start with Windows is an `HKCU\...\Run` value. No admin rights, no service.
 * All subprocess I/O is UTF-8 (`errors="replace"`).
 
+## Updates
+
+* The update check is one public GitHub API call. Installing needs a click and never happens silently.
+* The updater downloads from HTTPS GitHub hosts only (every redirect hop is checked), verifies the SHA-256 published with the release (refuses a release with none, or two that disagree), refuses zips with absolute, drive, `..` or symlink entries, and test-starts the new program on a *copy* of the settings before replacing anything.
+* The settings backup (`backups\*.zip`) contains the same DPAPI-encrypted blobs as the data folder (only this Windows user can decrypt them) plus history; treat it like the data folder.
+* The updater runs as the same user, writes only to its own folders and the install folder, and needs no admin rights. It is not code-signed, so Windows SmartScreen may warn the first time it runs from a downloaded zip.
+
 ## What it does not do
 
 * It does not verify the server's identity beyond normal HTTPS certificate validation (no certificate pinning, no "ignore TLS errors").

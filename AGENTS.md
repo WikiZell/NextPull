@@ -37,6 +37,7 @@ destination folder + start time + speed limit (+ filters). The app keeps history
 | `connections.py` | Connections (Nextcloud + SFTPGo/WebDAV): address rules, records, public view, sessions, discovery, invite codes. See docs/CONNECTIONS.md. |
 | `nc_client.py` | Login Flow v2, WebDAV PROPFIND listing, OCS user info, revoke. stdlib only. |
 | `store.py` | `clean_job`/`clean_settings`, `ConfigStore` (JSON), `SecretStore` (DPAPI), `HistoryDb` (SQLite runs/files/stats). |
+| `installer.py`, `nextpull_updater.py`, `updater_web/` | Update installer (backup, download, verify, swap, rollback), its companion program and window. Rules below; see docs/UPDATES.md. |
 | `winutil.py` | DPAPI, autostart (HKCU Run), watchdog (schtasks), single instance + wake event, sleep prevention, free space. |
 | `tray.py` | Optional pystray icon (drawn in code) and notifications. |
 | `web/` | `index.html`, `style.css`, `app.js`, `mock-api.js` (development only, `?mock=1`). |
@@ -51,6 +52,7 @@ py -3 -m pip install -r requirements.txt                       # pywebview, pyst
 py -3 -m unittest discover -s tests -v                          # about 75 s; also: py -3 -m unittest tests.test_engine
 py -3 -W error::ResourceWarning -m unittest discover -s tests   # must stay clean (leaked handles)
 node --check web/app.js; node --check web/mock-api.js           # UI syntax
+node --check updater_web/app.js; node --check updater_web/mock.js   # updater window syntax
 py -3 nextpull.py --data-dir .\devdata                          # run the real app with a throw-away data folder
 powershell -ExecutionPolicy Bypass -File build\build.ps1        # package -> dist\NextPull\
 ```
@@ -96,6 +98,11 @@ Keep these; add a test when you touch the code that enforces them.
     logger would not cover child loggers), call `applog.register_secret` for every new secret (app password, rc password), never `print` request data,
     and keep `tests/test_diagnostics.py` passing. A report hides file/folder/account names unless the user ticks the box. Bridge `@safe` logs every failure;
     new background threads must not swallow exceptions silently (log them).
+
+20. **Updates never lose the user's setup**: `installer.Installer` backs up the data folder (verified zip) before it downloads, tests the new program with `--self-check` on a *copy* before it replaces anything,
+    renames (never deletes) the old program folder to `<app>.previous`, and on any failure puts the old folder and the settings back and starts the old version (`_recover`). Downloads: GitHub HTTPS only,
+    every redirect hop checked, SHA-256 required, zips with unsafe paths refused. Never weaken these, never install without the user's click, and never run the updater against the real data or install folder in a test
+    (use temp folders; `tests/test_installer.py` shows how). The updater holds the single-instance mutex while files move. See docs/UPDATES.md.
 
 ## Conventions
 

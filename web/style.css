@@ -119,6 +119,12 @@ td.num,th.num{text-align:right;white-space:nowrap}
 .notice{padding:11px 14px;border-radius:9px;background:var(--amber-bg);color:var(--amber);font-size:13px}
 .notice.info{background:var(--blue-bg);color:var(--blue-dark)}
 .notice.bad{background:var(--red-bg);color:var(--red)}
+.notice.ok{background:var(--green-bg);color:var(--green)}
+.notice a{color:inherit;font-weight:650}
+.modal ul.plain{margin:0;padding-left:18px;display:grid;gap:6px;color:#40506b;font-size:13px}
+.modal .notes{display:grid;gap:3px;max-height:190px;overflow:auto;padding:10px 12px;border-radius:9px;background:var(--wash);font-size:13px}
+.modal .notes .hd{font-weight:650;margin-top:4px}
+.modal .notes .li::before{content:"\2022";margin-right:8px;color:var(--muted)}
 .hint{font-size:12px;color:var(--muted)}
 .srv{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:9px 0;border-bottom:1px solid #eef1f7}
 .srv:last-child{border:0}

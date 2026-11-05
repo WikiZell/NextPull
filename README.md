@@ -26,6 +26,11 @@ It replaces a hand-written nightly `rclone move` script with something you can s
   Windows DPAPI and only reaches rclone through its environment; downloads are written as `.partial` and renamed; Move is rclone's
   own copy-verify-delete; Dry run changes nothing. See [docs/SECURITY.md](docs/SECURITY.md).
 
+## Updates
+
+NextPull checks GitHub for a newer release and installs it with one click: **Install now** closes the app, backs up your jobs/history/sign-ins, downloads and verifies the release, test-starts the new version on a
+copy of your settings, swaps the program folder, restarts, and **puts the old version and your settings back automatically if anything fails**. Details: [docs/wiki/Updates.md](docs/wiki/Updates.md), [docs/UPDATES.md](docs/UPDATES.md).
+
 ## Quick start
 
 **On the PC that downloads (no Python needed)** - use the packaged folder built by `build\build.ps1`:

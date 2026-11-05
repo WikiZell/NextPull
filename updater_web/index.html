@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>NextPull Update</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main class="shell" id="shell" data-phase="running" data-busy="true">
+  <header class="top">
+    <div class="brand"><span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M12 4v10m0 0-4-4m4 4 4-4M5 19h14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>NextPull Update</span></div>
+    <div class="versions" id="versions" aria-label="Version change"><span id="v-old">0.2.0</span><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M5 12h14m0 0-5-5m5 5-5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><b id="v-new">0.3.0</b></div>
+  </header>
+
+  <section class="hero" aria-live="polite" aria-atomic="true">
+    <div class="ring" id="ring" role="progressbar" aria-label="Overall progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+      <svg viewBox="0 0 120 120" aria-hidden="true">
+        <circle class="track" cx="60" cy="60" r="52"/>
+        <circle class="bar" id="ring-bar" cx="60" cy="60" r="52" pathLength="100"/>
+      </svg>
+      <div class="ring-core">
+        <span class="pct" id="pct">0<small>%</small></span>
+        <svg class="glyph ok" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <svg class="glyph warn" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 7v6.5M12 17.2v.1" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>
+        <svg class="glyph undo" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 7 4.5 11.5 9 16M5 11.5h8.5a5 5 0 0 1 0 10H11" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" transform="translate(0 -3)"/></svg>
+      </div>
+    </div>
+    <h1 id="headline">Preparing the update</h1>
+    <p class="sub" id="sub"></p>
+  </section>
+
+  <section class="transfer" id="transfer" hidden>
+    <div class="bar-wrap"><div class="fill" id="dl-fill"></div></div>
+    <div class="transfer-text" id="dl-text"></div>
+  </section>
+
+  <section class="card steps-card" aria-label="Steps">
+    <ol class="steps" id="steps"></ol>
+  </section>
+
+  <section class="extras">
+    <div class="chips" role="group" aria-label="More information">
+      <button class="chip" id="chip-notes" type="button" aria-expanded="false" aria-controls="panel-notes"><span>What's new in <b id="notes-version"></b></span><i aria-hidden="true"></i></button>
+      <button class="chip" id="chip-log" type="button" aria-expanded="false" aria-controls="panel-log"><span>Details</span><i aria-hidden="true"></i></button>
+    </div>
+    <div class="card panel" id="panel-notes" hidden><div class="notes" id="notes"></div></div>
+    <div class="card panel" id="panel-log" hidden>
+      <pre class="log" id="log" tabindex="0" aria-label="Update log"></pre>
+      <div class="log-actions"><button class="link" id="copy-log" type="button">Copy details</button><span class="copied" id="copied" hidden>Copied</span></div>
+    </div>
+  </section>
+
+  <footer class="foot">
+    <p class="reassure" id="reassure"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M12 3 5 6v5.5c0 4.2 2.8 7.6 7 9.5 4.2-1.9 7-5.3 7-9.5V6l-7-3Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="m9 12 2.2 2.2L15.5 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span id="reassure-text">Your settings are backed up first. If anything goes wrong, the old version comes back automatically.</span></p>
+    <div class="actions" id="actions"></div>
+  </footer>
+</main>
+<script src="app.js"></script>
+</body>
+</html>

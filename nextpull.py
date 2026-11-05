@@ -9,7 +9,10 @@ from __future__ import annotations
 
 import argparse
 import functools
+import json
 import os
+import shutil
+import subprocess
 import sys
 import tempfile
 import threading
@@ -22,6 +25,7 @@ from typing import Any, Callable
 import applog
 import connections
 import diagnostics
+import installer
 import updates
 import winutil
 from engine import Engine
@@ -30,7 +34,7 @@ from rclone_runner import RcloneError, find_rclone, rclone_version
 from scheduler import describe_schedule
 from store import ConfigStore, HistoryDb, SecretStore, new_job_id
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 APP_NAME = "NextPull"
 DATA_DIR = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local") / APP_NAME
 LOGIN_TIMEOUT = 20 * 60
@@ -38,6 +42,7 @@ _log = applog.get_logger("app")
 _ui_log = applog.get_logger("ui")
 MAX_UI_ERRORS = 60   # a broken page must not flood the log
 UPDATE_FIRST_DELAY = 20.0       # seconds after start before the first update check
+UPDATER_EXE = "NextPullUpdater.exe"
 UPDATE_INTERVAL = 6 * 3600.0    # then every 6 hours (only while "check for updates" is on)
 
 
@@ -78,6 +83,10 @@ class NextPullApi:
         self._update_stop = threading.Event()
         self._update: dict[str, Any] = {"checked": "", "error": "", "latest": None}
         self._last_self_test: list[dict[str, str]] | None = None
+        self._frozen = bool(getattr(sys, "frozen", False))   # tests switch this to exercise the installer path
+        self._program_dir = winutil.exe_dir()
+        self._spawn_updater: Callable[[Path, Path], None] = self._start_updater_process
+        self._quit_delay = 0.6
         saved = self._secrets.load()
         if saved:
             applog.register_secret(saved["app_password"])
@@ -166,7 +175,7 @@ class NextPullApi:
         asset = (latest or {}).get("asset")
         return {"ok": True, "enabled": self._config.settings()["check_updates"], "current": __version__, "available": available, "skipped": skipped, "checked": self._update.get("checked", ""),
                 "error": self._update.get("error", ""), "latest": {"version": latest["version"], "name": latest["name"], "notes": latest["notes"], "page": latest["page"], "published": latest["published"],
-                                                                       "size": (asset or {}).get("size", 0), "installable": bool(asset)} if latest else None}
+                                                                       "size": (asset or {}).get("size", 0), "installable": bool(asset), "can_install": bool(asset) and self._can_self_update()} if latest else None}
 
     @safe
     def check_update(self) -> dict[str, Any]:
@@ -184,6 +193,79 @@ class NextPullApi:
         """Hide the banner for this version (a newer one shows it again)."""
         self._config.set_state("update_skipped", str(version))
         return self._update_view()
+
+    def _can_self_update(self) -> bool:
+        """Only the packaged app (with its updater next to it) can replace itself; a source checkout updates with git."""
+        return bool(self._data_dir) and self._frozen and (self._program_dir / "updater" / UPDATER_EXE).is_file()
+
+    def _start_updater_process(self, updater: Path, request_file: Path) -> None:
+        subprocess.Popen([str(updater), "--request", str(request_file)], cwd=str(updater.parent), close_fds=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         creationflags=installer.DETACHED if sys.platform == "win32" else 0)
+
+    @safe
+    def install_update(self, force: bool = False) -> dict[str, Any]:
+        """The user agreed: hand over to NextPullUpdater and quit. The updater backs up, downloads, verifies, swaps and restarts.
+
+        A copy of the updater runs from the data folder, because the one in the program folder would be locked while that folder is replaced.
+        """
+        latest = self._update.get("latest")
+        if not latest or not updates.is_newer(latest["version"], __version__):
+            return {"ok": False, "error": "There is no newer version to install"}
+        asset = latest.get("asset")
+        if not asset:
+            return {"ok": False, "error": "This release has no download for NextPull. Open the release page instead"}
+        if not self._can_self_update():
+            return {"ok": False, "error": "This copy of NextPull cannot update itself (it is not the packaged app). Download the new version from the release page"}
+        if self._engine.is_busy() and not force:
+            return {"ok": False, "busy": True, "quiet": True, "error": "A download is running right now. It would be stopped and picked up again at its next scheduled time"}
+        assert self._data_dir is not None
+        run_dir = self._data_dir / "updater-run" / installer.stamp()
+        try:
+            shutil.copytree(self._program_dir / "updater", run_dir)
+        except OSError as error:
+            raise OSError(f"Could not prepare the updater: {error}") from error
+        request = installer.Request(app_dir=str(self._program_dir), data_dir=str(self._data_dir), current_version=__version__, version=latest["version"], asset_name=asset["name"], asset_url=asset["url"],
+                                    size=int(asset.get("size") or 0), sha256=asset.get("sha256", ""), sha256_url=asset.get("sha256_url", ""), notes=latest.get("notes", ""), page=latest.get("page", ""),
+                                    name=latest.get("name", ""), pid=os.getpid(), started=datetime.now().isoformat(timespec="seconds"), launch_args=["--data-dir", str(self._data_dir)])
+        request_file = self._data_dir / "update" / "request.json"
+        request.save(request_file)
+        installer.clear_result(self._data_dir)
+        _log.info("update to %s: starting the updater (%s)", latest["version"], run_dir.name)
+        self._spawn_updater(run_dir / UPDATER_EXE, request_file)
+        threading.Timer(self._quit_delay, self.quit_app).start()
+        return {"ok": True}
+
+    @safe
+    def update_result(self) -> dict[str, Any]:
+        """What the last update did (shown once on the Dashboard after the restart)."""
+        return {"ok": True, "result": installer.read_result(self._data_dir) if self._data_dir else None}
+
+    @safe
+    def dismiss_update_result(self) -> dict[str, Any]:
+        if self._data_dir:
+            installer.clear_result(self._data_dir)
+        return {"ok": True}
+
+    @safe
+    def open_backups_folder(self) -> dict[str, Any]:
+        folder = (self._data_dir / "backups") if self._data_dir else None
+        if not folder or not folder.is_dir():
+            return {"ok": False, "error": "There is no backup folder yet"}
+        winutil.open_path(folder)
+        return {"ok": True}
+
+    def _clean_update_leftovers(self) -> None:
+        """After an update: remove the updater copy, the download and half-finished folders (best effort, never raises)."""
+        if not self._data_dir:
+            return
+        try:
+            for name in ("updater-run", "update"):
+                installer.remove_tree(self._data_dir / name)
+            if self._frozen:
+                for suffix in (".new", ".unpack", ".failed"):
+                    installer.remove_tree(self._program_dir.with_name(self._program_dir.name + suffix))
+        except Exception:
+            _log.warning("could not clean up after an update", exc_info=True)
 
     @safe
     def open_release_page(self) -> dict[str, Any]:
@@ -226,7 +308,9 @@ class NextPullApi:
         status["rclone_found"] = self._find_rclone() is not None
         status["events"] = self._engine.events()[:25]
         view = self._update_view()
-        status["update"] = {"version": view["latest"]["version"], "installable": view["latest"]["installable"]} if view["enabled"] and view["available"] and not view["skipped"] else None
+        status["update"] = {"version": view["latest"]["version"], "installable": view["latest"]["installable"], "can_install": view["latest"]["can_install"]} if view["enabled"] and view["available"] and not view["skipped"] else None
+        result = installer.read_result(self._data_dir) if self._data_dir else None
+        status["update_result"] = {key: result.get(key) for key in ("ok", "version", "previous_version", "message", "rolled_back", "restore_failed", "cancelled", "backup")} if result else None
         status["problem_count"] = diagnostics.unseen_problem_count(self._history.list_runs(40), self._config.state("problems_seen", ""))
         return status
 
@@ -603,11 +687,40 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog=APP_NAME, description="Scheduled Nextcloud downloads with rclone")
     parser.add_argument("--background", action="store_true", help="start hidden in the tray (used by start with Windows and the watchdog)")
     parser.add_argument("--data-dir", type=Path, default=DATA_DIR, help="where jobs, history and logs are kept")
+    parser.add_argument("--self-check", type=Path, metavar="REPORT", help="used by the updater: load everything against --data-dir, write a JSON report and exit (no window)")
     return parser.parse_args(argv)
+
+
+def self_check(report: Path, data_dir: Path) -> int:
+    """Prove this program starts and can read a settings folder, without a window, a tray, the network or the real data."""
+    problems: list[str] = []
+    try:
+        web_dir = winutil.app_dir() / "web"
+        for name in ("index.html", "app.js", "style.css"):
+            if not (web_dir / name).is_file():
+                problems.append(f"missing web/{name}")
+        import webview   # noqa: F401 - the window library must be importable
+        api = NextPullApi(data_dir)
+        try:
+            api._config.jobs()
+            api._config.settings()
+            api._history.list_runs(1)
+            api._secrets.connections()
+        finally:
+            api.shutdown()
+    except Exception as error:
+        problems.append(f"{type(error).__name__}: {error}")
+    try:
+        report.write_text(json.dumps({"ok": not problems, "version": __version__, "problems": problems}), encoding="utf-8")
+    except OSError:
+        return 2
+    return 0 if not problems else 1
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+    if args.self_check:
+        return self_check(args.self_check, args.data_dir)
     single = winutil.SingleInstance()
     if not single.acquire():
         single.signal_existing()   # a second launch just raises the window of the running one
@@ -616,6 +729,7 @@ def main(argv: list[str] | None = None) -> int:
     from tray import Tray
     web_dir = winutil.app_dir() / "web"
     api = NextPullApi(args.data_dir)
+    api._clean_update_leftovers()
     applog.install_excepthooks()
     tray = Tray(api)
     api._tray = tray if tray.available else None

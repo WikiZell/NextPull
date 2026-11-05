@@ -95,6 +95,9 @@ document.addEventListener("click", async event => {
   if (upd) {
     event.preventDefault();
     if (upd.dataset.update === "page") call("open_release_page");
+    if (upd.dataset.update === "install") openInstallDialog();
+    if (upd.dataset.update === "backups") call("open_backups_folder");
+    if (upd.dataset.update === "dismiss") { await call("dismiss_update_result"); S.sig.notice = null; poll(); }
     if (upd.dataset.update === "skip" && S.status && S.status.update) { await call("skip_update", S.status.update.version); S.sig.notice = null; poll(); }
     return;
   }
@@ -145,7 +148,9 @@ function updateDashboard() {
   const notices = [];
   if (!status.connected) notices.push(`<div class="notice bad">No server is connected yet. <a href="#" data-goto="settings">Open Settings to connect</a>.</div>`);
   if (!status.rclone_found) notices.push(`<div class="notice bad">rclone was not found. Put <b>rclone.exe</b> in the <b>tools\\rclone</b> folder next to NextPull, or set its path in Settings.</div>`);
-  if (status.update) notices.push(`<div class="notice info">NextPull <b>${esc(status.update.version)}</b> is available (you have ${esc((S.boot.app || {}).version)}). <a href="#" data-update="page">What is new</a> - <a href="#" data-update="skip">Skip this version</a></div>`);
+  if (status.update) notices.push(`<div class="notice info">NextPull <b>${esc(status.update.version)}</b> is available (you have ${esc((S.boot.app || {}).version)}). ${status.update.can_install ? '<a href="#" data-update="install"><b>Install now</b></a> - ' : ""}<a href="#" data-update="page">What is new</a> - <a href="#" data-update="skip">Skip this version</a></div>`);
+  const result = status.update_result;
+  if (result) notices.push(updateResultHtml(result));
   if (status.problem_count) notices.push(`<div class="notice">${status.problem_count} recent run(s) had problems. <a href="#" data-goto="diagnostics">See what went wrong</a>.</div>`);
   if (!S.jobs.length) notices.push(`<div class="notice info">No jobs yet. <a href="#" data-goto="jobs">Create your first job</a>.</div>`);
   const noticeHtml = notices.join("");
@@ -435,11 +440,49 @@ async function loadSettings() {
     <div class="card"><h2>About</h2><p class="muted">NextPull <b>version ${esc((boot.app || {}).version)}</b> - scheduled Nextcloud downloads with rclone.</p><p class="muted">Made by René Girardi. Downloads are done by <a href="https://rclone.org" target="_blank" rel="noopener">rclone</a> (MIT license, © Nick Craig-Wood and contributors). NextPull is an independent project, not affiliated with rclone or Nextcloud.</p></div>`;
   wireSettings();
 }
+function updateResultHtml(result) {
+  const links = ' <a href="#" data-update="dismiss">Dismiss</a>';
+  if (result.ok) return `<div class="notice ok">NextPull was updated from ${esc(result.previous_version)} to <b>${esc(result.version)}</b>. Your settings from before the update are kept in the backups folder. <a href="#" data-update="backups">Open backups</a> -${links}</div>`;
+  if (result.cancelled) return `<div class="notice">The update to ${esc(result.version)} was cancelled. Nothing was changed.${links}</div>`;
+  if (result.restore_failed) return `<div class="notice bad"><b>The update to ${esc(result.version)} failed and the automatic restore did not finish.</b> ${esc(result.message)} Your settings are in the backups folder: <a href="#" data-update="backups">Open backups</a> -${links}</div>`;
+  if (result.rolled_back) return `<div class="notice bad">The update to <b>${esc(result.version)}</b> did not work, so it was undone: NextPull ${esc(result.previous_version)} and your settings are back as they were. ${esc(result.message)}${links}</div>`;
+  return `<div class="notice bad">The update to <b>${esc(result.version)}</b> was not installed and nothing was changed. ${esc(result.message)}${links}</div>`;
+}
+function installNotes(text) {
+  const lines = String(text || "").split(/\r?\n/).map(line => line.trim()).filter(Boolean).slice(0, 14);
+  return lines.length ? `<div class="notes">${lines.map(line => /^[-*]\s+/.test(line) ? `<div class="li">${esc(line.replace(/^[-*]\s+/, ""))}</div>` : `<div class="hd">${esc(line.replace(/^#+\s*/, ""))}</div>`).join("")}</div>` : "";
+}
+async function openInstallDialog() {
+  const info = await call("update_info");
+  if (!info.ok || !info.available || !info.latest) return;
+  const latest = info.latest;
+  const overlay = modal(`<div class="modal-head"><h2>Install NextPull ${esc(latest.version)}?</h2><button class="btn ghost small" data-close>Close</button></div>
+    <div class="muted">You have ${esc(info.current)}${latest.size ? ` - download about ${esc(fmtBytes(latest.size))}` : ""}.</div>
+    ${installNotes(latest.notes)}
+    <ul class="plain">
+      <li><b>NextPull closes</b> and a small updater window takes over. A running download is stopped cleanly and starts again at its next scheduled time.</li>
+      <li><b>Your settings are backed up first</b> (jobs, history, saved sign-ins), and checked.</li>
+      <li>The new version is tested before it replaces the old one. <b>If anything goes wrong, the old version and your settings come back automatically.</b></li>
+    </ul>
+    <div class="row"><button class="btn" id="inst-go">Install and restart</button><button class="btn ghost" data-close>Not now</button></div>`, false, 40);
+  overlay.querySelector("#inst-go").addEventListener("click", async () => {
+    const button = overlay.querySelector("#inst-go");
+    button.disabled = true; button.textContent = "Starting the updater...";
+    let r = await call("install_update", false);
+    if (r && r.busy) {
+      overlay.remove();
+      if (!await ask("A download is running right now. Update anyway? It is stopped cleanly and starts again at its next scheduled time.", "Stop it and update")) return;
+      r = await call("install_update", true);
+    }
+    if (r && r.ok) { const body = overlay.querySelector(".modal"); if (body) body.innerHTML = '<h2>Handing over to the updater...</h2><div class="muted">NextPull is closing. The update window opens now, and NextPull reopens by itself when it is done.</div>'; }
+    else if (overlay.isConnected) { button.disabled = false; button.textContent = "Install and restart"; }
+  });
+}
 function updateHtml(u) {
   if (!u) return "";
   const when = u.checked ? `Last checked ${fmtTime(u.checked)}.` : "Not checked yet.";
   const state = u.error ? `<div class="notice">${esc(u.error)}</div>`
-    : u.available ? `<div class="notice info">Version <b>${esc(u.latest.version)}</b> is available. <a href="#" data-update="page">What is new</a></div>`
+    : u.available ? `<div class="notice info">Version <b>${esc(u.latest.version)}</b> is available. <a href="#" data-update="page">What is new</a>${u.latest.can_install ? ' - <a href="#" data-update="install"><b>Install now</b></a>' : ""}</div>`
     : u.latest ? '<span class="badge ok">Up to date</span>' : "";
   return `<div>You have version <b>${esc(u.current)}</b>. ${when}</div>${state}`;
 }

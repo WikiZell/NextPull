@@ -143,7 +143,7 @@ class ApiCase(TempCase):
         self.assertTrue(view["available"])
         self.assertEqual(view["latest"]["version"], "9.9.9")
         self.assertTrue(view["latest"]["installable"])
-        self.assertEqual(self.api.status()["update"], {"version": "9.9.9", "installable": True})
+        self.assertEqual(self.api.status()["update"], {"version": "9.9.9", "installable": True, "can_install": False})   # from source: no self-update
         self.api.skip_update("9.9.9")
         self.assertIsNone(self.api.status()["update"])
         self.gh.body = json.dumps(release(tag="v10.0.0")).encode()

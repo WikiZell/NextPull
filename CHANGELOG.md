@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.3.0 - 2026-11-05
+
+### Added
+- **One-click updates with automatic rollback.** *Install now* (Dashboard banner or Settings -> Updates) hands over to a new companion program, **NextPullUpdater**, which closes NextPull and then: backs up your settings
+  (jobs, settings, history, saved sign-ins -> `%LOCALAPPDATA%\NextPull\backups\`, verified by reading it back, last 5 kept), downloads the release from GitHub only (redirects checked, SHA-256 verified), unpacks it
+  next to the install, **test-starts the new version on a copy of your settings**, swaps the program folder (the old one stays as `NextPull.previous`), starts the new version and watches it.
+  If anything fails the old version and your settings are put back and the old version is started again; a failure before the swap changes nothing.
+- **Updater window**: six clear steps, live download progress with speed and time left, release notes, a details log with *Copy details*, plain-language results (installed / undone / not installed / cancelled),
+  *Cancel* while downloading, *Close NextPull now* if it will not close, dark and light themes, keyboard and screen-reader friendly.
+- After an update the Dashboard shows what happened (updated, or why it was undone) until dismissed; *Open backups* opens the folder.
+- `NextPull.exe --self-check <report> --data-dir <folder>`: loads everything against a settings folder without a window and writes a JSON report (used by the updater).
+- `build\package.py` makes `dist\NextPull-<version>.zip` + `.sha256` (test-unpacked with the updater's own code); `build\build.ps1` builds the updater into `dist\NextPull\updater\`; `build\publish.ps1` publishes a release with `gh` after asking.
+- Tests: `tests/test_installer.py` (backup, restore, download guards, unpack safety, swap, every rollback path), `tests/test_updater.py` (window state, hand-over, self-check).
+
+### Changed
+- The updater holds NextPull's single-instance lock while files move, so the watchdog and *Start with Windows* cannot start a half-replaced program.
+- `winutil.SingleInstance` closes its handle when another instance exists (so the mutex disappears when that instance exits) and on `release()`.
+- Running from source: the *Install now* button is not shown (use `git pull`); the banner and *Check now* work as before.
+
 ## 0.2.0 - 2026-11-04
 
 ### Added

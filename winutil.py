@@ -175,7 +175,11 @@ class SingleInstance:
         if not IS_WINDOWS:
             return True
         self._mutex = _kernel32.CreateMutexW(None, False, self.name)
-        return ctypes.get_last_error() != 183   # ERROR_ALREADY_EXISTS: another process holds the mutex
+        if ctypes.get_last_error() == 183:   # ERROR_ALREADY_EXISTS: another process holds the mutex
+            _kernel32.CloseHandle(self._mutex)   # our extra handle would keep the mutex alive after that process exits
+            self._mutex = None
+            return False
+        return True
 
     def signal_existing(self) -> None:
         if not IS_WINDOWS:
@@ -202,6 +206,9 @@ class SingleInstance:
 
     def release(self) -> None:
         self._stop.set()
+        if IS_WINDOWS and self._mutex:
+            _kernel32.CloseHandle(self._mutex)
+            self._mutex = None
 
 
 # ------------------------------------------------------------------------------------------------------ misc
