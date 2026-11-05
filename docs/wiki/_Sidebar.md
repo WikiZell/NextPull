@@ -8,6 +8,7 @@
 - [Other servers (SFTPGo)](Other-Servers)
 - [SFTPGo server setup](SFTPGo-Server-Setup)
 - [Scheduling and speed](Scheduling-and-Speed)
+- [Get a file now](Get-a-File-Now)
 - [Move mode and safety](Move-Mode-and-Safety)
 - [History and statistics](History-and-Statistics)
 - [Problems and reports](Problems-and-Reports)

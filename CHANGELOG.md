@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.4.0 - 2026-11-05
+
+### Added
+- **Get a file now.** On the **Files** page tick one or several files or folders (or press *Get* on a row) and NextPull fetches them right away, outside any schedule. A small dialog asks the two things that matter:
+  **Download** (the original stays on the server) or **Move** (download, verify, then remove it from the server), and **where to save** (the default folder, or any other one, with a free-space check). It runs through the
+  same queue and engine as scheduled jobs, so every safety rule applies, and shows up in History as *Manual download*.
+- **Nothing at the destination is lost.** If a picked file already exists in the folder with another size you choose *Keep mine* (the server copy is not taken, and not removed in Move mode) or *Replace it* (the old file is first
+  moved into `%LOCALAPPDATA%\NextPull\replaced\<date>`).
+- **NextPush tells NextPull what the account may do**: when the server is NextPush, *Move* is greyed out with a plain explanation for folders shared as *download only*, instead of failing after the download.
+- **New Dashboard**: a live status card (what is downloading, what is next, *Get a file now*, *Pause schedules*), today / 30-day / reliability / free-disk tiles (with a warning when the disk is getting full), a 14-day chart,
+  server health with response time, recently downloaded files with *Open folder*, scheduled jobs with *Run now*, and a welcome card with the first steps when nothing is set up yet.
+- **Pause all schedules** (Dashboard and Settings): for holidays or maintenance. Skipped slots are written to History and nothing runs late afterwards; *Get now* and *Run now* still work.
+- **Files page**: filter box (press `/`), sort (name, newest, largest), select all, a selection bar, breadcrumbs.
+- **Settings**: default folder for quick downloads, appearance (follow Windows, light, dark).
+- New bridge methods `dashboard`, `server_health`, `set_paused`, `quick_info`, `fetch_now`; tests in `tests/test_quick.py` (real rclone: single file, groups with glob characters, folders, keep/replace, move, root files).
+
+### Changed
+- **Redesign**: new colour system with a proper dark theme, vector icons instead of emoji, cards with depth, readable tables, clearer focus rings, animated dialogs (`Esc` closes, dialogs are announced to screen readers),
+  a layout that works down to a narrow window, reduced-motion and high-contrast support.
+- A quick download ignores the *skip files newer than* setting: you asked for that file, so you get it.
+
 ## 0.3.0 - 2026-11-05
 
 ### Added

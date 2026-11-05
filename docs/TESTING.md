@@ -24,6 +24,7 @@ No real Nextcloud, rclone or network is needed: the suites use two test doubles.
 | --- | --- |
 | `test_installer.py` | update engine: backup + restore + pruning, checksum/redirect/zip-slip refusals, health-check gate, swap, every rollback path (crash at start, failed rename, failed restore), cancel, force-close, lock order |
 | `test_updater.py` | updater window state and headlines, loopback switch, bridge contract, a whole run through the window state, NextPull's hand-over (`install_update`), result banner, `--self-check` |
+| `test_quick.py` | quick downloads: job building (single file, groups with escaped glob characters, folders, bad input), conflicts, **real rclone** (copy, move, keep, replace with backup, root files, missing file), the engine queue (`quick` history rows, no stop-by, waits behind a running job), the pause switch, the bridge (`quick_info`, `fetch_now`, `dashboard`, `server_health`, defaults) and NextPush move permission (`nextpush_me`) |
 | `test_scheduler.py` | time parsing, slot maths, next run, weekday filter, stop-by overnight, run/catch-up/missed classification, descriptions |
 | `test_store.py` | job/settings validation and clamping, path cleaning, JSON persistence round trip and memory mode, export/import (new ids, no secrets), secret store (no plain password on disk, real DPAPI on Windows), history aggregates, missed/skipped rows, statistics, prune |
 | `test_nc_client.py` | URL normalisation, PROPFIND parsing (spaces, unicode, `&`), login flow, listing, error mapping, user info, revoke, "never downloads or deletes" |

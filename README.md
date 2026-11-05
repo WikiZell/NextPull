@@ -15,6 +15,8 @@ It replaces a hand-written nightly `rclone move` script with something you can s
 - **Jobs**: Nextcloud folder, Copy or Move (Move deletes on Nextcloud only after rclone verified the download), destination folder,
   weekdays + start time + optional stop-by, speed limit (flat MB/s or a time-of-day timetable), files at once, streams per file,
   minimum file age, include/exclude patterns, checksums, dry run, catch-up for missed runs.
+- **Get a file now**: on the Files page pick one or several files or folders and fetch them immediately, as a *download* (the server keeps them) or a *move* (removed from the server after a verified copy), into the default or any other folder. Nothing at the destination is ever lost (*keep mine* or *replace, old copy saved*). See [Get a file now](docs/wiki/Get-a-File-Now.md).
+- **Dashboard**: live status, today / 30-day / reliability / free-disk tiles, 14-day chart, server health, recent downloads, one-click *Pause schedules*; light and dark themes.
 - **Live view**: progress, speed, ETA per file, change the speed limit or cancel while it runs.
 - **History and logs**: every run including *missed* and *skipped* ones, per-file results, the raw rclone log.
 - **Other servers**: besides Nextcloud, pull from an **SFTPGo / WebDAV server** with a user name and password (optional access key, invite code, login tested before saving). Same jobs, same safety rules.

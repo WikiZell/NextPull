@@ -6,9 +6,10 @@
   const now = new Date();
   const day = n => { const d = new Date(now); d.setDate(d.getDate() - n); return d; };
   const state = {
-    connected: true,
-    settings: {notifications: true, close_to_tray: true, prevent_sleep: true, rclone_path: "", history_days: 365, log_days: 90},
-    jobs: [
+    connected: !new URLSearchParams(location.search).has("empty"),
+    paused: new URLSearchParams(location.search).has("paused"),
+    settings: {notifications: true, close_to_tray: true, prevent_sleep: true, rclone_path: "", history_days: 365, log_days: 90, quick_dest: "", paused: false, theme: new URLSearchParams(location.search).get("theme") || "system"},
+    jobs: new URLSearchParams(location.search).has("empty") ? [] : [
       {id: "a1b2c3d4", name: "Night pull", enabled: true, source: "Documents/Photos", mode: "move", dest: "D:\\Films\\Incoming", schedule: {days: [0, 1, 2, 3, 4, 5, 6], time: "02:00", stop_by: "06:00"}, catch_up: true, catch_up_hours: 12,
        speed: {limit_mbps: 8, timetable: ""}, transfers: 1, streams: 4, min_age_minutes: 5, excludes: ["*.log"], includes: [], checksum: false, dry_run: false, delete_empty_dirs: true, retries: 3},
       {id: "e5f6a7b8", name: "Weekend series", enabled: false, source: "Series/Archive", mode: "copy", dest: "E:\\Series", schedule: {days: [5, 6], time: "09:30", stop_by: ""}, catch_up: false, catch_up_hours: 12,
@@ -18,7 +19,7 @@
     run: new URLSearchParams(location.search).has("running") ? {t0: Date.now() - 1500e3, total: 5.5e9, bytes: 0} : null,
   };
   const tree = {"": ["Documents", "Photos", "Shared", "Series"], Shared: ["DOWNLOAD", "EXTRACTED"], "Shared/EXTRACTED": ["Robocar POLI"], Series: ["Archive"], "Series/Archive": []};
-  const files = {"Shared/EXTRACTED": [["La fine di Oak Street [2026.1080p].mkv", 2655484605], ["Supergirl [2026.1080p].mkv", 2890968976]]};
+  const files = {"": [["readme.txt", 2048], ["Holiday 2026.mp4", 1.4e9]], "Shared/EXTRACTED": [["La fine di Oak Street [2026.1080p].mkv", 2655484605], ["Supergirl [2026.1080p].mkv", 2890968976], ["Sotto Il Segno Del Pericolo.mkv", 1.9e9], ["Dusting Cliff 7.mkv", 3.4e9]]};
   const runs = [], runFiles = {};
   const names = ["Sotto Il Segno Del Pericolo.mkv", "The Odyssey (1997).mkv", "Dusting Cliff 7.mkv", "Sahara 1983.mkv", "Ski Patrol 1990.mkv"];
   for (let i = 1; i <= 24; i++) {
@@ -46,9 +47,9 @@
   const mockResult = kind => ({ok: kind === "ok", version: "0.3.0", previous_version: "0.2.0", message: kind === "ok" ? "" : "The new version stopped right after starting (exit code 3)", rolled_back: kind === "rolledback", restore_failed: kind === "restorefailed", cancelled: false, backup: "C:\\backups\\x.zip"});
   const updInfo = () => ({enabled: true, current: "0.2.0", available: !!new URLSearchParams(location.search).has("update"), skipped: !!state.updSkipped, checked: iso(now), error: "", latest: {version: "0.2.0", name: "NextPull 0.2.0", notes: "- Faster listing; fixes", page: "https://github.com/WikiZell/NextPull/releases/tag/v0.2.0", published: iso(now), size: 85e6, installable: true, can_install: true}});
   window.pywebview = {api: {
-    bootstrap: async () => ok({app: {name: "NextPull", version: "0.2.0"}, settings: state.settings, connection: state.connected ? {connected: true, server: "https://cloud.example.org", user: "alice", display_name: "Alice Example", quota_used: 410e9, quota_total: 2e12} : {connected: false},
+    bootstrap: async () => ok({app: {name: "NextPull", version: "0.4.0"}, settings: state.settings, connection: state.connected ? {connected: true, server: "https://cloud.example.org", user: "alice", display_name: "Alice Example", quota_used: 410e9, quota_total: 2e12} : {connected: false},
       rclone: {ok: true, found: true, path: "C:\\NextPull\\tools\\rclone\\rclone.exe", version: "rclone v1.68.2"}, autostart: true, watchdog: false, data_dir: "C:\\Users\\alice\\AppData\\Local\\NextPull", tray: true, windows: true}),
-    status: async () => ok({running: !!state.run, current: sim(), starting: false, queue: [], connected: state.connected, rclone_found: true, last_checked: iso(now), now: iso(now),
+    status: async () => ok({running: !!state.run, current: sim(), starting: false, queue: state.queue || [], paused: state.paused, connected: state.connected, rclone_found: true, last_checked: iso(now), now: iso(now),
       jobs: state.jobs.map(j => ({id: j.id, name: j.name, enabled: j.enabled, next_run: j.enabled ? iso(new Date(now.getTime() + 8 * 3600e3)) : null, last_run: {id: runs[0].id, state: runs[0].state, started: runs[0].started, finished: runs[0].finished, files: runs[0].files, bytes: runs[0].bytes, message: runs[0].message}, running: !!state.run && j.id === "a1b2c3d4"})),
       update: new URLSearchParams(location.search).has("update") && !state.updSkipped ? {version: "0.2.0", installable: true, can_install: true} : null, update_result: new URLSearchParams(location.search).get("result") ? mockResult(new URLSearchParams(location.search).get("result")) : null, problem_count: 2, events: [{time: iso(now), level: "info", text: "Night pull: ok - 2 file(s) transferred"}, {time: iso(day(1)), level: "warn", text: "Night pull: scheduled run at 02:00 was missed"}, {time: iso(day(2)), level: "info", text: "Night pull: started (schedule)"}]}),
     connection: async () => ok({connection: {connected: state.connected, server: "https://cloud.example.org", user: "alice", display_name: "Alice Example"}}),
@@ -75,6 +76,14 @@
     duplicate_job: async id => { const j = state.jobs.find(x => x.id === id); state.jobs.push({...j, id: Math.random().toString(16).slice(2, 10), name: j.name + " (copy)", enabled: false}); return ok({}); },
     run_job: async () => { state.run = {t0: Date.now(), total: 5.5e9, bytes: 0}; setTimeout(() => { state.run = null; }, 60000); return ok({queued_behind: ""}); },
     cancel_run: async () => { state.run = null; return ok({}); }, set_speed: async () => ok({}),
+    set_paused: async v => { state.paused = !!v; state.settings.paused = !!v; return ok({paused: state.paused}); },
+    server_health: async () => ok({servers: [...(state.connected ? [{id: "nextcloud", label: "Nextcloud", ok: true, ms: 142, error: ""}] : []), ...state.servers.map((s, i) => ({id: s.id, label: s.label, ok: i % 2 === 0, ms: i % 2 === 0 ? 38 : null, error: i % 2 === 0 ? "" : "Cannot reach the server (network or server down)"}))]}),
+    dashboard: async () => { const st = await window.pywebview.api.stats(14); const recent = Object.entries(runFiles).slice(0, 6).flatMap(([id, fl]) => fl.map(f => ({...f, finished: runs.find(r => r.id === Number(id)).finished, run_id: Number(id), job_name: "Night pull", dest: "D:\\Films\\Incoming", trigger: "schedule", mode: "move", deleted: 1}))).slice(0, 5);
+      if (state.quickDone) recent.unshift({name: state.quickDone, size: 2.1e9, finished: iso(new Date()), run_id: 200, job_name: state.quickDone, dest: state.quickDest, trigger: "quick", mode: state.quickMode, deleted: 0});
+      return ok({totals: st.totals, daily: st.daily, today: {bytes: st.daily[st.daily.length - 1].bytes, files: st.daily[st.daily.length - 1].files}, week: {bytes: st.daily.slice(-7).reduce((n, d) => n + d.bytes, 0), files: 9}, recent,
+        disks: [{drive: "D:\\", free_bytes: new URLSearchParams(location.search).has("full") ? 3e9 : 412e9, total_bytes: 2e12, for: "Night pull"}], paused: state.paused, now: iso(new Date())}); },
+    quick_info: async (conn, items, dest) => ok({dest: dest || "D:\\Films\\Incoming", default_dest: "D:\\Films\\Incoming", exists: true, writable: true, free_bytes: 412e9, conflicts: items && items.length && new URLSearchParams(location.search).has("conflict") ? [{path: items[0].path, name: items[0].path.split("/").pop(), local_size: 1000, size: items[0].size}] : []}),
+    fetch_now: async (conn, items, mode, dest) => { if (!items.length) return {ok: false, error: "Pick at least one file or folder"}; state.quickDone = items[0].path.split("/").pop(); state.quickDest = dest; state.quickMode = mode; state.run = {t0: Date.now(), total: 2.1e9, bytes: 0}; setTimeout(() => { state.run = null; }, 20000); return ok({queued: items.length, queued_behind: ""}); },
     history: async (limit, offset, jobId) => ok({runs: runs.filter(r => !jobId || r.job_id === jobId)}),
     run_detail: async id => ok({run: runs.find(r => r.id === id), files: runFiles[id] || []}),
     run_log: async () => ok({lines: [{time: "2026-10-01 02:00:02", level: "info", msg: "Copied (new)", object: "Dusting.Cliff.7.mkv"}, {time: "2026-10-01 02:05:27", level: "info", msg: "Deleted", object: "Dusting.Cliff.7.mkv"}, {time: "2026-10-01 02:05:28", level: "error", msg: "Attempt 1/4 failed with 1 errors and: connection reset", object: ""}, {time: "2026-10-01 02:15:12", level: "notice", msg: "Skipped delete as --dry-run", object: "rclone_log.log"}]}),

@@ -141,7 +141,7 @@ def clean_job(raw: Any) -> dict[str, Any]:
 
 
 def default_settings() -> dict[str, Any]:
-    return {"notifications": True, "close_to_tray": True, "prevent_sleep": True, "rclone_path": "", "history_days": 365, "log_days": 90, "check_updates": True}
+    return {"notifications": True, "close_to_tray": True, "prevent_sleep": True, "rclone_path": "", "history_days": 365, "log_days": 90, "check_updates": True, "quick_dest": "", "paused": False, "theme": "system"}
 
 
 def clean_settings(raw: Any) -> dict[str, Any]:
@@ -155,6 +155,9 @@ def clean_settings(raw: Any) -> dict[str, Any]:
         "history_days": _int(raw.get("history_days"), 7, 3650, base["history_days"]),
         "log_days": _int(raw.get("log_days"), 1, 3650, base["log_days"]),
         "check_updates": bool(raw.get("check_updates", base["check_updates"])),
+        "quick_dest": str(raw.get("quick_dest") or "").strip()[:500],
+        "paused": bool(raw.get("paused", base["paused"])),
+        "theme": str(raw.get("theme")) if str(raw.get("theme")) in ("system", "light", "dark") else base["theme"],
     }
 
 
@@ -473,6 +476,11 @@ class HistoryDb:
     def last_run(self, job_id: str) -> dict[str, Any] | None:
         rows = self._rows("SELECT * FROM runs WHERE job_id=? AND state NOT IN ('missed','skipped') ORDER BY started DESC, id DESC LIMIT 1", (job_id,))
         return rows[0] if rows else None
+
+    def recent_files(self, limit: int = 8) -> list[dict[str, Any]]:
+        """The newest files that really arrived (status ok), with where they went; the Dashboard's 'Recently downloaded' list."""
+        return self._rows("SELECT f.id, f.name, f.size, f.finished, f.deleted, r.id AS run_id, r.job_name, r.dest, r.trigger, r.mode FROM files f JOIN runs r ON r.id=f.run_id "
+                          "WHERE f.status='ok' AND r.dry_run=0 ORDER BY f.finished DESC, f.id DESC LIMIT ?", (max(1, min(50, limit)),))
 
     def prune(self, days: int) -> int:
         cutoff = (datetime.now() - timedelta(days=days)).replace(microsecond=0).isoformat(timespec="seconds")

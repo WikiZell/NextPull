@@ -38,6 +38,7 @@ destination folder + start time + speed limit (+ filters). The app keeps history
 | `nc_client.py` | Login Flow v2, WebDAV PROPFIND listing, OCS user info, revoke. stdlib only. |
 | `store.py` | `clean_job`/`clean_settings`, `ConfigStore` (JSON), `SecretStore` (DPAPI), `HistoryDb` (SQLite runs/files/stats). |
 | `installer.py`, `nextpull_updater.py`, `updater_web/` | Update installer (backup, download, verify, swap, rollback), its companion program and window. Rules below; see docs/UPDATES.md. |
+| `quick.py` | "Get a file now": turns picked files/folders into ordinary one-off jobs (`quick_jobs`), conflicts, keep/replace. Run by `Engine.fetch_now`, recorded under the job id `quick`. |
 | `winutil.py` | DPAPI, autostart (HKCU Run), watchdog (schtasks), single instance + wake event, sleep prevention, free space. |
 | `tray.py` | Optional pystray icon (drawn in code) and notifications. |
 | `web/` | `index.html`, `style.css`, `app.js`, `mock-api.js` (development only, `?mock=1`). |
@@ -103,6 +104,11 @@ Keep these; add a test when you touch the code that enforces them.
     renames (never deletes) the old program folder to `<app>.previous`, and on any failure puts the old folder and the settings back and starts the old version (`_recover`). Downloads: GitHub HTTPS only,
     every redirect hop checked, SHA-256 required, zips with unsafe paths refused. Never weaken these, never install without the user's click, and never run the updater against the real data or install folder in a test
     (use temp folders; `tests/test_installer.py` shows how). The updater holds the single-instance mutex while files move. See docs/UPDATES.md.
+
+21. **Quick downloads are ordinary runs**: `quick.quick_jobs` builds complete job dicts that go through `Engine.fetch_now`, the same queue, `RcloneRun` and history as scheduled jobs (id `quick`, trigger `quick`). Nothing at the
+    destination is lost: `keep` = `--ignore-existing`, `replace` = `--backup-dir` into `<data>/replaced/<stamp>`. A file is addressed by naming it as the source (never by building a command from its name), several files from
+    one folder use anchored, escaped include rules (`glob_escape`), a picked folder is never removed from the server (rule 18). `move` is always an explicit choice in the dialog, and the bridge refuses it when NextPush says the
+    account is download-only. **Pause** (`settings.paused`) skips scheduled slots only (recorded as `skipped`), never a quick download or Run now.
 
 ## Conventions
 

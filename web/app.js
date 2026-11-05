@@ -3,7 +3,13 @@
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-const S = {page: "dashboard", status: null, jobs: [], settings: {}, boot: {}, filesPath: "", filesConn: "", conns: [], statsDays: 30, historyJob: "", sig: {}, nowKey: "", login: null};
+const ic = name => `<svg class="i" aria-hidden="true"><use href="#i-${name}"/></svg>`;
+const TRIGGER = {schedule: "Scheduled", manual: "Run now", "catch-up": "Catch-up", quick: "Manual download"};
+function applyTheme(theme) {
+  const root = document.documentElement;
+  if (theme === "light" || theme === "dark") root.dataset.theme = theme; else delete root.dataset.theme;
+}
+const S = {page: "dashboard", board: null, status: null, jobs: [], settings: {}, boot: {}, filesPath: "", filesConn: "", conns: [], statsDays: 30, historyJob: "", sig: {}, nowKey: "", login: null};
 let api = null;
 
 // ---------------------------------------------------------------------------------------------- formatting
@@ -26,6 +32,15 @@ function fmtTime(iso) {
   if (!iso) return "-";
   const d = new Date(iso);
   return isNaN(d) ? esc(iso) : d.toLocaleString([], {month: "short", day: "numeric", hour: "2-digit", minute: "2-digit"});
+}
+function fmtAgo(iso) {
+  if (!iso) return "";
+  const diff = (new Date() - new Date(iso)) / 1000;
+  if (isNaN(diff)) return "";
+  if (diff < 90) return "just now";
+  if (diff < 3600) return `${Math.round(diff / 60)} min ago`;
+  if (diff < 86400) return `${Math.round(diff / 3600)} h ago`;
+  return fmtTime(iso);
 }
 function fmtIn(iso) {
   if (!iso) return "";
@@ -52,12 +67,20 @@ async function loadConns() {
 const connLabel = id => ((S.conns.find(c => c.id === id) || {}).label) || (id === "nextcloud" ? "Nextcloud" : "(missing connection)");
 
 // ------------------------------------------------------------------------------------------------- plumbing
-function toast(text, kind = "") {
+function toast(text, kind = "", action = null) {
   const el = document.createElement("div");
   el.className = `toast ${kind}`;
-  el.textContent = text;
+  const span = document.createElement("span");
+  span.textContent = text;
+  el.appendChild(span);
+  if (action) {
+    const button = document.createElement("button");
+    button.textContent = action.label;
+    button.addEventListener("click", () => { el.remove(); if (action.go) show(action.go); });
+    el.appendChild(button);
+  }
   $("toasts").appendChild(el);
-  setTimeout(() => el.remove(), kind === "error" ? 7000 : 3500);
+  setTimeout(() => el.remove(), kind === "error" ? 7000 : action ? 7000 : 3500);
 }
 async function call(name, ...args) {
   let result;
@@ -65,16 +88,24 @@ async function call(name, ...args) {
   if (result && result.ok === false && result.error && !result.quiet) toast(result.error, "error");
   return result || {ok: false};
 }
-function modal(html, wide = false, layer = 30) {
+function modal(html, wide = false, layer = 30, extra = "") {
   const overlay = document.createElement("div");
   overlay.className = "overlay";
   overlay.style.zIndex = layer;
-  overlay.innerHTML = `<div class="modal ${wide ? "wide" : ""}">${html}</div>`;
+  overlay.innerHTML = `<div class="modal ${wide ? "wide" : ""} ${extra}" role="dialog" aria-modal="true">${html}</div>`;
+  const heading = overlay.querySelector("h2");
+  if (heading) { heading.id = `dlg-${Math.random().toString(36).slice(2, 8)}`; overlay.firstChild.setAttribute("aria-labelledby", heading.id); }
   overlay.addEventListener("mousedown", event => { if (event.target === overlay) overlay.remove(); });
   overlay.querySelectorAll("[data-close]").forEach(button => button.addEventListener("click", () => overlay.remove()));
   $("modals").appendChild(overlay);
   return overlay;
 }
+document.addEventListener("keydown", event => {
+  if (event.key !== "Escape") return;
+  const open = $("modals").lastElementChild;
+  if (open) { open.querySelector("[data-close]") ? open.querySelector("[data-close]").click() : open.remove(); event.preventDefault(); }
+  else if (S.page === "files" && F.sel.size) { F.sel.clear(); renderFiles(); }
+});
 function ask(message, okLabel = "Yes", danger = false) {
   return new Promise(resolve => {
     const overlay = modal(`<h2>${esc(message)}</h2><div class="row"><button class="btn ${danger ? "danger" : ""}" id="ask-ok">${esc(okLabel)}</button><button class="btn ghost" data-close>Cancel</button></div>`, false, 50);
@@ -87,7 +118,8 @@ function ask(message, okLabel = "Yes", danger = false) {
 function show(page) {
   S.page = page;
   document.querySelectorAll(".page").forEach(el => el.hidden = el.id !== `page-${page}`);
-  document.querySelectorAll(".nav").forEach(el => el.classList.toggle("active", el.dataset.page === page));
+  document.querySelectorAll(".nav").forEach(el => { const on = el.dataset.page === page; el.classList.toggle("active", on); if (on) el.setAttribute("aria-current", "page"); else el.removeAttribute("aria-current"); });
+  document.getElementById("main").scrollTo(0, 0);
   ({dashboard: loadDashboard, jobs: loadJobs, files: loadFiles, history: loadHistory, stats: loadStats, diagnostics: loadDiagnostics, settings: loadSettings})[page]();
 }
 document.addEventListener("click", async event => {
@@ -118,7 +150,10 @@ async function poll() {
   const badgeEl = $("nav-problems");
   badgeEl.hidden = !status.problem_count;
   badgeEl.textContent = status.problem_count > 9 ? "9+" : status.problem_count;
-  if (S.page === "dashboard") updateDashboard();
+  $("foot-paused").hidden = !status.paused;
+  $("nav-update").hidden = !status.update;
+  if (was && was.running && !status.running && S.page === "dashboard") loadDashboard();
+  else if (S.page === "dashboard") updateDashboard();
   if (S.login && S.login.state === "waiting") pollLogin();
   if (was && was.running !== status.running && S.page === "jobs") loadJobs();
 }
@@ -132,51 +167,91 @@ async function pollLogin() {
 
 // -------------------------------------------------------------------------------------------------- dashboard
 async function loadDashboard() {
-  const [jobs, stats] = await Promise.all([api.list_jobs(), api.stats(30)]);
+  const [jobs, board] = await Promise.all([api.list_jobs(), api.dashboard()]);
   S.jobs = jobs.jobs || [];
-  const totals = (stats && stats.totals) || {};
-  $("dash-tiles").innerHTML = [
-    ["Downloaded (30 days)", fmtBytes(totals.bytes)], ["Files", totals.files ?? 0],
-    ["Success rate", totals.success_rate == null ? "-" : `${totals.success_rate}%`], ["Average speed", totals.avg_speed ? fmtSpeed(totals.avg_speed) : "-"],
-  ].map(([label, value]) => `<div class="tile"><span>${label}</span><b>${value}</b></div>`).join("");
+  S.board = board && board.ok ? board : {totals: {}, daily: [], recent: [], disks: [], today: {bytes: 0, files: 0}, week: {bytes: 0, files: 0}};
+  S.sig = {};
   S.nowKey = "";
+  renderBoard();
   updateDashboard();
+  loadHealth(false);
+}
+function diskTile(disks) {
+  if (!disks.length) return `<div class="tile"><span>Free space</span><b>-</b><small>No destination folder yet</small></div>`;
+  const low = [...disks].sort((a, b) => a.free_bytes - b.free_bytes)[0];
+  const usedPct = low.total_bytes ? Math.round(100 * (low.total_bytes - low.free_bytes) / low.total_bytes) : 0;
+  const level = low.free_bytes < 5 * 2 ** 30 || usedPct > 95 ? "bad" : low.free_bytes < 20 * 2 ** 30 || usedPct > 88 ? "warn" : "good";
+  return `<div class="tile"><span>Free space on ${esc(low.drive.replace(/[\\/]+$/, ""))}</span><b>${fmtBytes(low.free_bytes)}</b>${low.total_bytes ? `<div class="bar thin ${level}"><i style="width:${usedPct}%"></i></div>` : ""}<small>${level === "bad" ? "Almost full: downloads may fail" : level === "warn" ? "Getting full" : `${usedPct}% used`}</small></div>`;
+}
+function renderBoard() {
+  const b = S.board, t = b.totals || {};
+  $("dash-tiles").innerHTML = [
+    `<div class="tile"><span>Today</span><b>${fmtBytes(b.today.bytes)}</b><small>${b.today.files} file${b.today.files === 1 ? "" : "s"} &middot; ${fmtBytes(b.week.bytes)} this week</small></div>`,
+    `<div class="tile"><span>Last 30 days</span><b>${fmtBytes(t.bytes)}</b><small>${t.files ?? 0} files${t.avg_speed ? ` &middot; ${fmtSpeed(t.avg_speed)} on average` : ""}</small></div>`,
+    `<div class="tile"><span>Reliability</span><b>${t.success_rate == null ? "-" : `${t.success_rate}%`}</b><small>${t.failed_runs ?? 0} failed &middot; ${t.partial_runs ?? 0} partial &middot; ${t.missed_runs ?? 0} missed</small></div>`,
+    diskTile(b.disks || []),
+  ].join("");
+  const daily = b.daily || [], max = Math.max(1, ...daily.map(d => d.bytes));
+  $("dash-chart-note").textContent = `${fmtBytes(daily.reduce((n, d) => n + d.bytes, 0))} in total`;
+  $("dash-chart").innerHTML = daily.length ? `<div class="spark" role="img" aria-label="Downloaded per day over the last 14 days">${daily.map(d => `<div class="col" title="${esc(d.date)}: ${fmtBytes(d.bytes)}, ${d.files} file(s)${d.failed ? ", a run failed" : ""}"><i class="${d.bytes ? (d.failed ? "bad" : "") : "zero"}" style="height:${d.bytes ? Math.max(4, 100 * d.bytes / max) : 3}%"></i></div>`).join("")}</div>
+    <div class="spark-days">${daily.map((d, i) => `<span>${i % 2 === 0 || daily.length < 8 ? new Date(d.date + "T12:00").toLocaleDateString([], {weekday: "narrow"}) : ""}</span>`).join("")}</div>` : '<div class="empty">No data yet.</div>';
+  const rec = b.recent || [];
+  $("dash-recent").innerHTML = rec.length ? rec.map(f => `<div class="rec"><span class="ic ${f.mode === "move" ? "move" : ""}">${ic(f.mode === "move" ? "move" : "file")}</span><div class="who"><b title="${esc(f.name)}">${esc(f.name.split("/").pop())}</b><span>${f.trigger === "quick" ? "Manual download" : esc(f.job_name)} &middot; ${fmtAgo(f.finished)}${f.mode === "move" ? " &middot; moved" : ""}</span></div><span class="sz">${fmtBytes(f.size)}</span><button class="icon-btn" data-open="${esc(f.dest)}" title="Open the folder" aria-label="Open the folder of ${esc(f.name)}">${ic("folder")}</button></div>`).join("")
+    : `<div class="empty">${ic("inbox")}Nothing downloaded yet.</div>`;
+}
+async function loadHealth(force) {
+  const box = $("dash-servers");
+  if (!S.status || !S.status.connected) { box.innerHTML = `<div class="empty">${ic("server")}No server connected yet.<div style="margin-top:8px"><button class="btn small" data-goto="settings">Connect a server</button></div></div>`; return; }
+  if (force) box.innerHTML = '<div class="empty">Checking...</div>';
+  const r = await api.server_health(!!force);
+  if (S.page !== "dashboard" || !r || !r.ok) return;
+  box.innerHTML = r.servers.map(s => `<div class="sv"><span class="dot ${s.ok ? "on" : "off"}"></span><div class="grow"><b>${esc(s.label)}</b><span>${s.ok ? `Answers in ${s.ms < 1000 ? `${s.ms} ms` : `${(s.ms / 1000).toFixed(1)} s`}` : esc(s.error || "Not reachable")}</span></div><span class="badge ${s.ok ? "ok" : "error"}">${s.ok ? "Online" : "Problem"}</span></div>`).join("") || '<div class="empty">No server connected yet.</div>';
+}
+function welcomeHtml(status) {
+  const have = status.connected;
+  return `<div class="welcome"><div><h2>${have ? "You are connected" : "Welcome to NextPull"}</h2><p class="muted" style="margin-top:4px">${have ? "Now choose what to download." : "NextPull downloads files from your server to this PC, on a schedule or whenever you want one."}</p></div>
+    <ol><li class="${have ? "muted" : ""}"><b>Connect your server</b> (Nextcloud, or a NextPush / WebDAV server) in Settings.${have ? " Done." : ""}</li><li><b>Get a file now</b> from the Files page, or <b>create a job</b> that downloads a folder every night.</li></ol>
+    <div class="row">${have ? `<button class="btn big" data-goto="files">${ic("folder")}Open Files</button><button class="btn ghost big" data-goto="jobs">Create a job</button>` : `<button class="btn big" data-goto="settings">${ic("server")}Connect a server</button>`}</div></div>`;
 }
 function updateDashboard() {
   const status = S.status;
   if (!status) return;
   const notices = [];
-  if (!status.connected) notices.push(`<div class="notice bad">No server is connected yet. <a href="#" data-goto="settings">Open Settings to connect</a>.</div>`);
-  if (!status.rclone_found) notices.push(`<div class="notice bad">rclone was not found. Put <b>rclone.exe</b> in the <b>tools\\rclone</b> folder next to NextPull, or set its path in Settings.</div>`);
-  if (status.update) notices.push(`<div class="notice info">NextPull <b>${esc(status.update.version)}</b> is available (you have ${esc((S.boot.app || {}).version)}). ${status.update.can_install ? '<a href="#" data-update="install"><b>Install now</b></a> - ' : ""}<a href="#" data-update="page">What is new</a> - <a href="#" data-update="skip">Skip this version</a></div>`);
+  if (status.connected && !status.rclone_found) notices.push(`<div class="notice bad">${ic("alert")}<div>rclone was not found. Put <b>rclone.exe</b> in the <b>tools\\rclone</b> folder next to NextPull, or set its path in Settings.</div></div>`);
+  if (status.update) notices.push(`<div class="notice info">${ic("arrow-up")}<div>NextPull <b>${esc(status.update.version)}</b> is available (you have ${esc((S.boot.app || {}).version)}). ${status.update.can_install ? '<a href="#" data-update="install"><b>Install now</b></a> &middot; ' : ""}<a href="#" data-update="page">What is new</a> &middot; <a href="#" data-update="skip">Skip this version</a></div></div>`);
   const result = status.update_result;
   if (result) notices.push(updateResultHtml(result));
-  if (status.problem_count) notices.push(`<div class="notice">${status.problem_count} recent run(s) had problems. <a href="#" data-goto="diagnostics">See what went wrong</a>.</div>`);
-  if (!S.jobs.length) notices.push(`<div class="notice info">No jobs yet. <a href="#" data-goto="jobs">Create your first job</a>.</div>`);
+  if (status.problem_count) notices.push(`<div class="notice">${ic("alert")}<div>${status.problem_count} recent run(s) had problems. <a href="#" data-goto="diagnostics">See what went wrong</a>.</div></div>`);
   const noticeHtml = notices.join("");
   if (S.sig.notice !== noticeHtml) { S.sig.notice = noticeHtml; $("dash-notice").innerHTML = noticeHtml; }
   updateNow(status);
-  const jobsHtml = status.jobs.length ? `<table><thead><tr><th>Job</th><th>Next run</th><th>Last run</th><th></th></tr></thead><tbody>${status.jobs.map(job => `
-    <tr><td><b>${esc(job.name)}</b> ${job.enabled ? "" : '<span class="badge">Paused</span>'}</td>
-    <td>${job.next_run ? `${fmtTime(job.next_run)} <span class="muted">${fmtIn(job.next_run)}</span>` : "-"}</td>
-    <td>${job.last_run ? `${badge(job.last_run.state)} <span class="muted">${fmtTime(job.last_run.started)} - ${job.last_run.files} file(s), ${fmtBytes(job.last_run.bytes)}</span>` : '<span class="muted">never</span>'}</td>
-    <td class="num"><button class="btn ghost small" data-run="${esc(job.id)}" ${job.running ? "disabled" : ""}>Run now</button></td></tr>`).join("")}</tbody></table>` : '<div class="empty">No jobs.</div>';
+  const jobsHtml = status.jobs.length ? status.jobs.map(job => `<div class="mini"><div class="grow"><b>${esc(job.name)} ${job.enabled ? "" : '<span class="badge">Paused</span>'}</b><span>${job.enabled && job.next_run ? `Next ${fmtTime(job.next_run)} (${fmtIn(job.next_run)})` : "Not scheduled"}${job.last_run ? ` &middot; last: ${esc(STATE_LABEL[job.last_run.state] || job.last_run.state)}, ${job.last_run.files} file(s)` : " &middot; never run"}</span></div>
+    <button class="btn ghost small" data-run="${esc(job.id)}" ${job.running ? "disabled" : ""}>Run now</button></div>`).join("") : `<div class="empty">${ic("jobs")}No jobs yet.<div style="margin-top:8px"><button class="btn small" data-goto="jobs">Create a job</button></div></div>`;
   if (S.sig.jobs !== jobsHtml) { S.sig.jobs = jobsHtml; $("dash-jobs").innerHTML = jobsHtml; }
-  const eventsHtml = status.events.length ? `<table><tbody>${status.events.slice(0, 12).map(e => `<tr><td class="muted" style="width:120px">${fmtTime(e.time)}</td><td>${e.level === "warn" || e.level === "error" ? `<span class="badge warn">!</span> ` : ""}${esc(e.text)}</td></tr>`).join("")}</tbody></table>` : '<div class="empty">Nothing yet.</div>';
+  const eventsHtml = status.events.length ? `<table><tbody>${status.events.slice(0, 12).map(e => `<tr><td class="muted" style="width:130px">${fmtTime(e.time)}</td><td>${e.level === "warn" || e.level === "error" ? `<span class="badge warn">!</span> ` : ""}${esc(e.text)}</td></tr>`).join("")}</tbody></table>` : '<div class="empty">Nothing yet.</div>';
   if (S.sig.events !== eventsHtml) { S.sig.events = eventsHtml; $("dash-events").innerHTML = eventsHtml; }
 }
 function updateNow(status) {
   const run = status.current;
-  const key = run ? `run:${run.run_id}` : (status.starting ? "starting" : "idle");
+  const queued = status.queue || [];
+  const key = !status.connected && !S.jobs.length ? "welcome" : `${run ? `run:${run.run_id}` : status.starting ? "starting" : "idle"}|${status.paused ? "p" : ""}|${queued.map(q => q.job_name).join(",")}|${S.jobs.length}`;
   if (key !== S.nowKey) {   // rebuild the skeleton only when the situation changes, so typing in the speed box is never interrupted
     S.nowKey = key;
-    if (!run) {
-      const upcoming = status.jobs.filter(job => job.next_run).sort((a, b) => a.next_run.localeCompare(b.next_run))[0];
-      $("dash-now").innerHTML = `<div class="row between"><div><h2>${status.starting ? "Starting..." : "Idle"}</h2><p class="muted">${upcoming ? `Next run: <b>${esc(upcoming.name)}</b> ${fmtTime(upcoming.next_run)} (${fmtIn(upcoming.next_run)})` : "No scheduled runs."}</p></div></div>`;
+    const waiting = queued.length ? `<div class="hint">${queued.length} waiting: ${esc(queued.slice(0, 3).map(q => q.job_name).join(", "))}${queued.length > 3 ? "..." : ""}</div>` : "";
+    if (key === "welcome") { $("dash-now").innerHTML = welcomeHtml(status); }
+    else if (!run) {
+      const upcoming = status.jobs.filter(job => job.enabled && job.next_run).sort((a, b) => a.next_run.localeCompare(b.next_run))[0];
+      const title = status.starting ? "Starting..." : status.paused ? "Scheduled downloads are paused" : "All quiet";
+      const sub = status.paused ? "Nothing runs on its own until you resume. Getting a file now and Run now still work."
+        : upcoming ? `Next: <b>${esc(upcoming.name)}</b> ${fmtTime(upcoming.next_run)} (${fmtIn(upcoming.next_run)})` : status.jobs.length ? "No scheduled runs." : "Get a file now, or create a job to download on a schedule.";
+      $("dash-now").innerHTML = `<div class="headline"><div class="who"><span class="orb ${status.paused ? "pause" : ""}">${ic(status.paused ? "pause" : "check")}</span><div><h2>${title}</h2><div class="sub">${sub}</div></div></div>
+        <div class="actions">${status.connected ? `<button class="btn big" data-goto="files">${ic("download")}Get a file now</button>` : ""}${status.jobs.length || status.paused ? `<button class="btn ghost big" id="hero-pause">${ic(status.paused ? "play" : "pause")}${status.paused ? "Resume schedules" : "Pause schedules"}</button>` : ""}</div></div>${waiting}`;
+      const pause = $("hero-pause");
+      if (pause) pause.addEventListener("click", async () => { const r = await call("set_paused", !status.paused); if (r.ok) { toast(r.paused ? "Scheduled downloads paused" : "Scheduled downloads resumed", "ok"); await poll(); S.nowKey = ""; updateNow(S.status); } });
     } else {
-      $("dash-now").innerHTML = `<div class="row between"><div><h2 id="now-title"></h2><p class="muted" id="now-sub"></p></div>
-        <div class="row"><label style="width:150px">Speed limit (MB/s)<input id="now-speed" type="number" min="0" step="0.5" placeholder="0 = unlimited"></label><button class="btn ghost small" id="now-apply">Apply</button><button class="btn danger small" id="now-cancel">Cancel run</button></div></div>
-        <div class="bar" style="margin:14px 0 8px"><i id="now-bar"></i></div><div class="row between"><span id="now-stats" class="muted"></span><span id="now-eta" class="muted"></span></div><div id="now-files" style="margin-top:12px"></div>`;
+      $("dash-now").innerHTML = `<div class="headline"><div class="who"><span class="orb live">${ic("download")}</span><div><h2 id="now-title"></h2><div class="sub" id="now-sub"></div></div></div>
+        <div class="row"><label class="inline" style="width:190px">Limit MB/s<input id="now-speed" type="number" min="0" step="0.5" placeholder="0 = none"></label><button class="btn ghost small" id="now-apply">Apply</button><button class="btn danger small" id="now-cancel">Cancel</button></div></div>
+        <div><div class="bar"><i id="now-bar"></i></div><div class="row between" style="margin-top:7px"><span id="now-stats" class="muted"></span><span id="now-eta" class="muted"></span></div></div><div class="files-now" id="now-files"></div>${waiting}`;
       $("now-apply").addEventListener("click", async () => { const r = await call("set_speed", Number($("now-speed").value || 0)); if (r.ok) toast("Speed limit changed for this run", "ok"); });
       $("now-cancel").addEventListener("click", async () => { if (await ask("Cancel the running download?", "Cancel run", true)) call("cancel_run"); });
     }
@@ -184,19 +259,23 @@ function updateNow(status) {
   if (!run) return;
   const pct = run.total_bytes ? Math.min(100, 100 * run.bytes / run.total_bytes) : 0;
   $("now-title").innerHTML = `${esc(run.job_name)} ${badge(run.state)} ${run.dry_run ? '<span class="badge">Dry run</span>' : ""}`;
-  $("now-sub").textContent = `${run.mode === "move" ? "Move" : "Copy"} - started ${fmtTime(run.started)} - limit ${run.bwlimit}`;
+  $("now-sub").textContent = `${run.mode === "move" ? "Moving" : "Downloading"} - started ${fmtTime(run.started)} - limit ${run.bwlimit}`;
   $("now-bar").style.width = `${pct}%`;
   $("now-stats").textContent = `${fmtBytes(run.bytes)} of ${fmtBytes(run.total_bytes)} - ${fmtSpeed(run.speed)} - ${run.files_done} file(s) done${run.errors ? ` - ${run.errors} error(s)` : ""}`;
   $("now-eta").textContent = run.eta != null ? `${fmtDur(run.eta)} left` : "";
-  $("now-files").innerHTML = run.transferring.map(item => `<div style="margin:6px 0"><div class="row between"><span class="mono">${esc(item.name)}</span><span class="muted">${item.percentage}% - ${fmtSpeed(item.speed)} - ${fmtBytes(item.size)}</span></div><div class="bar thin"><i style="width:${item.percentage}%"></i></div></div>`).join("");
+  $("now-files").innerHTML = run.transferring.map(item => `<div><div class="row between"><span class="mono">${esc(item.name)}</span><span class="muted">${item.percentage}% - ${fmtSpeed(item.speed)} - ${fmtBytes(item.size)}</span></div><div class="bar thin"><i style="width:${item.percentage}%"></i></div></div>`).join("");
 }
 document.addEventListener("click", async event => {
   const run = event.target.closest("[data-run]");
-  if (!run) return;
-  const result = await call("run_job", run.dataset.run);
-  if (result.ok) toast(result.queued_behind ? `Queued behind ${result.queued_behind}` : "Started", "ok");
-  poll();
+  if (run) {
+    const result = await call("run_job", run.dataset.run);
+    if (result.ok) toast(result.queued_behind ? `Queued behind ${result.queued_behind}` : "Started", "ok");
+    poll();
+  }
+  const open = event.target.closest("[data-open]");
+  if (open) call("open_path", open.dataset.open);
 });
+$("dash-health-refresh").addEventListener("click", () => loadHealth(true));
 
 // ------------------------------------------------------------------------------------------------------ jobs
 async function loadJobs() {
@@ -209,7 +288,7 @@ function speedText(job) {
   return job.speed.limit_mbps > 0 ? `${job.speed.limit_mbps} MB/s` : "no limit";
 }
 function jobCard(job) {
-  return `<div class="card job" data-job="${esc(job.id)}">
+  return `<div class="card job ${job.enabled ? "" : "off"}" data-job="${esc(job.id)}">
     <div class="top"><label class="switch" title="Enable or pause"><input type="checkbox" data-toggle="${esc(job.id)}" ${job.enabled ? "checked" : ""}><i></i></label>
       <h2>${esc(job.name)}</h2><span class="badge ${job.mode === "move" ? "warn" : ""}">${job.mode === "move" ? `Move (deletes on ${job.connection && job.connection !== "nextcloud" ? "the server" : "Nextcloud"} after download)` : "Copy"}</span>${job.dry_run ? '<span class="badge">Dry run</span>' : ""}${job.running ? badge("running") : ""}</div>
     <div class="path">${esc(job.connection_label || "Nextcloud")}: /${esc(job.source)} &rarr; ${esc(job.dest)}</div>
@@ -312,39 +391,154 @@ function pickRemote(startPath, onPick, conn = "nextcloud") {
 function crumbsHtml(path) {
   const parts = path ? path.split("/") : [];
   let acc = "";
-  return `<button data-crumb="">Files</button>` + parts.map(part => { acc += (acc ? "/" : "") + part; return `/<button data-crumb="${esc(acc)}">${esc(part)}</button>`; }).join("");
+  return `<button data-crumb="" class="${parts.length ? "" : "here"}">Server</button>` + parts.map((part, i) => { acc += (acc ? "/" : "") + part; return `<span class="sep">${ic("chevron")}</span><button data-crumb="${esc(acc)}" class="${i === parts.length - 1 ? "here" : ""}">${esc(part)}</button>`; }).join("");
 }
 
 // ----------------------------------------------------------------------------------------------- files page
+const F = {entries: [], sel: new Map(), filter: "", sort: "name"};
+const entryItem = e => ({path: e.path, is_dir: !!e.is_dir, size: e.size || 0});
 async function loadFiles(path = S.filesPath) {
   await loadConns();
-  if (!S.conns.length) { $("files-conn-wrap").hidden = true; $("files-list").innerHTML = '<div class="empty">No server is connected yet. Open Settings to connect.</div>'; $("files-crumbs").innerHTML = ""; return; }
+  if (!S.conns.length) { $("files-conn-wrap").hidden = true; $("files-list").innerHTML = `<div class="empty">${ic("server")}No server is connected yet.<div style="margin-top:8px"><button class="btn small" data-goto="settings">Connect a server</button></div></div>`; $("files-crumbs").innerHTML = ""; F.sel.clear(); updateSelbar(); return; }
   if (!S.conns.some(c => c.id === S.filesConn)) { S.filesConn = S.conns[0].id; path = ""; }
   $("files-conn-wrap").hidden = S.conns.length < 2;
   $("files-conn").innerHTML = S.conns.map(c => `<option value="${esc(c.id)}" ${c.id === S.filesConn ? "selected" : ""}>${esc(c.label)}</option>`).join("");
+  $("files-list").innerHTML = '<div class="empty">Loading...</div>';
   const r = await api.browse(path, S.filesConn);
-  if (!r.ok) { $("files-list").innerHTML = `<div class="empty">${esc(r.error || "Could not load")}</div>`; return; }
+  if (!r.ok) { $("files-list").innerHTML = `<div class="empty">${ic("alert")}${esc(r.error || "Could not load")}</div>`; return; }
+  if (r.path !== S.filesPath) { F.sel.clear(); F.filter = ""; $("files-filter").value = ""; }
   S.filesPath = r.path;
+  F.entries = r.entries || [];
   $("files-crumbs").innerHTML = crumbsHtml(r.path);
-  $("files-list").innerHTML = r.entries.map(e => `<div class="item ${e.is_dir ? "dir" : ""}" ${e.is_dir ? `data-fpath="${esc(e.path)}"` : ""}>${e.is_dir ? "&#128193;" : "&#128196;"} <span>${esc(e.name)}</span><span class="size">${fmtBytes(e.size)}${e.modified ? ` - ${fmtTime(e.modified)}` : ""}</span></div>`).join("") || '<div class="empty">Empty folder.</div>';
+  renderFiles();
+}
+function visibleFiles() {
+  const q = F.filter.trim().toLowerCase();
+  const list = F.entries.filter(e => !q || e.name.toLowerCase().includes(q));
+  const by = {name: (a, b) => a.name.localeCompare(b.name, undefined, {numeric: true, sensitivity: "base"}), new: (a, b) => String(b.modified || "").localeCompare(String(a.modified || "")) || by_name(a, b), size: (a, b) => (b.size || 0) - (a.size || 0) || by_name(a, b)};
+  const by_name = by.name;
+  return list.sort((a, b) => (b.is_dir - a.is_dir) || by[F.sort](a, b));
+}
+function renderFiles() {
+  const list = visibleFiles();
+  const all = list.length > 0 && list.every(e => F.sel.has(e.path));
+  const head = `<div class="fi head"><span><input type="checkbox" id="files-all" aria-label="Select everything shown" ${all ? "checked" : ""} ${list.length ? "" : "disabled"}></span><span></span><span>Name</span><span class="sz">Size</span><span class="tm">Modified</span><span></span></div>`;
+  $("files-list").innerHTML = list.length ? head + list.map(e => `<div class="fi ${e.is_dir ? "dir" : ""} ${F.sel.has(e.path) ? "sel" : ""}" role="listitem">
+      <span><input type="checkbox" data-pick="${esc(e.path)}" aria-label="Select ${esc(e.name)}" ${F.sel.has(e.path) ? "checked" : ""}></span><span class="ic">${ic(e.is_dir ? "folder" : "file")}</span>
+      <span class="nm" title="${esc(e.name)}">${e.is_dir ? `<button data-fpath="${esc(e.path)}">${esc(e.name)}</button>` : esc(e.name)}</span>
+      <span class="sz">${e.is_dir && !e.size ? "" : fmtBytes(e.size)}</span><span class="tm">${e.modified ? fmtTime(e.modified) : ""}</span>
+      <button class="btn ghost small go" data-get="${esc(e.path)}" aria-label="Get ${esc(e.name)} now">${ic("download")}Get</button></div>`).join("")
+    : `<div class="empty">${ic("inbox")}${F.entries.length ? "Nothing matches your filter." : "This folder is empty."}</div>`;
+  updateSelbar();
+}
+function updateSelbar() {
+  const picked = [...F.sel.values()];
+  $("files-selbar").hidden = !picked.length;
+  if (!picked.length) return;
+  const files = picked.filter(e => !e.is_dir), folders = picked.length - files.length;
+  $("sel-count").textContent = `${picked.length} selected`;
+  $("sel-size").textContent = `${files.length ? fmtBytes(files.reduce((n, e) => n + (e.size || 0), 0)) : ""}${folders ? `${files.length ? " + " : ""}${folders} folder${folders === 1 ? "" : "s"}` : ""}`;
 }
 $("page-files").addEventListener("click", event => {
   const d = event.target.closest("[data-fpath]"); if (d) loadFiles(d.dataset.fpath);
   const c = event.target.closest("[data-crumb]"); if (c) loadFiles(c.dataset.crumb);
+  const g = event.target.closest("[data-get]"); if (g) { const entry = F.entries.find(e => e.path === g.dataset.get); if (entry) openGetDialog([entry]); }
 });
+$("page-files").addEventListener("change", event => {
+  const t = event.target;
+  if (t.id === "files-all") { for (const e of visibleFiles()) t.checked ? F.sel.set(e.path, e) : F.sel.delete(e.path); renderFiles(); }
+  else if (t.dataset.pick) { const entry = F.entries.find(e => e.path === t.dataset.pick); if (entry) t.checked ? F.sel.set(entry.path, entry) : F.sel.delete(entry.path); renderFiles(); }
+});
+$("files-filter").addEventListener("input", event => { F.filter = event.target.value; renderFiles(); });
+$("files-sort").addEventListener("change", event => { F.sort = event.target.value; renderFiles(); });
+$("files-refresh").addEventListener("click", () => loadFiles(S.filesPath));
+$("sel-clear").addEventListener("click", () => { F.sel.clear(); renderFiles(); });
+$("sel-get").addEventListener("click", () => openGetDialog([...F.sel.values()]));
 $("files-make-job").addEventListener("click", () => openEditor(null, S.filesPath, S.filesConn));
-$("files-conn").addEventListener("change", event => { S.filesConn = event.target.value; S.filesPath = ""; loadFiles(""); });
+$("files-conn").addEventListener("change", event => { S.filesConn = event.target.value; S.filesPath = ""; F.sel.clear(); loadFiles(""); });
+document.addEventListener("keydown", event => {
+  if (event.key === "/" && S.page === "files" && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName) && !$("modals").children.length) { event.preventDefault(); $("files-filter").focus(); }
+});
+
+// "Get now": one or several files or folders, right away, outside any schedule. The user chooses Download (keep on the server) or Move.
+async function openGetDialog(entries) {
+  if (!entries.length) return;
+  const conn = S.filesConn, items = entries.map(entryItem);
+  const info = await call("quick_info", conn, items, "");
+  if (!info.ok) return;
+  const folders = entries.filter(e => e.is_dir).length, files = entries.length - folders;
+  const total = entries.filter(e => !e.is_dir).reduce((n, e) => n + (e.size || 0), 0);
+  const what = entries.length === 1 ? esc(entries[0].name) : `${entries.length} items`;
+  const preview = entries.slice(0, 6).map(e => `<div>${ic(e.is_dir ? "folder" : "file")}<span title="${esc(e.name)}">${esc(e.name)}</span><span class="muted">${e.is_dir ? "folder" : fmtBytes(e.size)}</span></div>`).join("") + (entries.length > 6 ? `<div class="muted">and ${entries.length - 6} more</div>` : "");
+  const overlay = modal(`<div class="modal-head"><h2>Get ${what} now</h2><button class="close" data-close aria-label="Close">${ic("x")}</button></div>
+    ${entries.length > 1 || entries[0].is_dir ? `<div class="pick">${preview}</div>` : `<div class="hint">${fmtBytes(total)} &middot; from ${esc(connLabel(conn))}</div>`}
+    <div class="choice" role="radiogroup" aria-label="What should happen to the files on the server?">
+      <label class="opt"><input type="radio" name="gm-mode" value="copy" checked>${ic("download")}<div><b>Download</b><span>Keep the original on the server. Nothing is deleted there.</span></div></label>
+      <label class="opt moveopt"><input type="radio" name="gm-mode" value="move">${ic("move")}<div><b>Move</b><span>Download, check that it arrived complete, then remove it from the server.</span></div></label>
+    </div>
+    <label>Save to<div class="row nowrap"><input id="gm-dest" value="${esc(info.dest)}" spellcheck="false"><button class="btn ghost" id="gm-pick" type="button">Choose...</button></div><small id="gm-info"></small></label>
+    <div id="gm-extra" class="stack tight"></div>
+    <label class="check" id="gm-def-wrap" hidden><input type="checkbox" id="gm-default"><span>Use this folder from now on for quick downloads</span></label>
+    <div class="row"><button class="btn" id="gm-go">Download</button><button class="btn ghost" data-close>Cancel</button></div>`, false, 30, "narrow");
+  const mode = () => overlay.querySelector('input[name="gm-mode"]:checked').value;
+  const go = overlay.querySelector("#gm-go");
+  let state = info, busy = false;
+  const label = () => {
+    const nouns = entries.length === 1 ? (entries[0].is_dir ? "folder" : "file") : files && !folders ? `${files} files` : `${entries.length} items`;
+    go.textContent = mode() === "move" ? `Move ${nouns}` : `Download ${entries.length === 1 ? "" : nouns}`.trim();
+    go.classList.toggle("danger", mode() === "move");
+  };
+  const refresh = async () => {
+    const dest = $("gm-dest").value.trim();
+    if (!dest) { $("gm-info").textContent = ""; return; }
+    const r = await api.quick_info(conn, items, dest);
+    if (!r || !r.ok) { $("gm-info").textContent = (r && r.error) || ""; return; }
+    state = r;
+    const moveBlocked = !!(r.move && !r.move.allowed), moveRadio = overlay.querySelector('input[value="move"]');
+    moveRadio.disabled = moveBlocked;
+    overlay.querySelector(".moveopt span").textContent = moveBlocked ? `Not available: your account can only download from ${r.move.blocked.join(", ")}.` : "Download, check that it arrived complete, then remove it from the server.";
+    if (moveBlocked && moveRadio.checked) { overlay.querySelector('input[value="copy"]').checked = true; label(); }
+    const need = total > 0 && r.free_bytes != null && total > r.free_bytes;
+    $("gm-info").textContent = `${r.exists ? "Folder exists" : "Folder will be created"}${r.writable ? "" : " - NOT writable"}${r.free_bytes != null ? ` - ${fmtBytes(r.free_bytes)} free` : ""}`;
+    $("gm-def-wrap").hidden = dest === r.default_dest;
+    const conflicts = r.conflicts || [];
+    $("gm-extra").innerHTML = `${need ? `<div class="notice bad">${ic("alert")}<div>Not enough free space: this needs ${fmtBytes(total)} and the disk has ${fmtBytes(r.free_bytes)}.</div></div>` : ""}${!r.writable && r.exists ? `<div class="notice bad">${ic("alert")}<div>NextPull cannot write to this folder. Choose another one.</div></div>` : ""}
+      ${conflicts.length ? `<div class="notice">${ic("alert")}<div><b>${conflicts.length === 1 ? esc(conflicts[0].name) + " already exists" : `${conflicts.length} files already exist`} in this folder</b> with a different size.
+        <div class="choice" style="margin-top:8px"><label class="check"><input type="radio" name="gm-conf" value="keep" checked><span>Keep mine<small>The existing file stays. The one on the server is not taken${mode() === "move" ? " and not removed" : ""}.</small></span></label>
+        <label class="check"><input type="radio" name="gm-conf" value="replace"><span>Replace it<small>The old file is saved first in NextPull's "replaced" folder, so nothing is lost.</small></span></label></div></div></div>` : ""}`;
+    go.disabled = busy || need || (!r.writable && r.exists);
+  };
+  overlay.addEventListener("change", event => { if (event.target.name === "gm-mode") { label(); refresh(); } });
+  overlay.querySelector("#gm-dest").addEventListener("change", refresh);
+  overlay.querySelector("#gm-pick").addEventListener("click", async () => { const r = await call("pick_folder", $("gm-dest").value); if (r.ok && r.path) { $("gm-dest").value = r.path; refresh(); } });
+  go.addEventListener("click", async () => {
+    const dest = $("gm-dest").value.trim();
+    const conflict = (overlay.querySelector('input[name="gm-conf"]:checked') || {}).value || "replace";
+    busy = true; go.disabled = true;
+    const r = await call("fetch_now", conn, items, mode(), dest, conflict);
+    busy = false;
+    if (!r.ok) { go.disabled = false; return; }
+    if (!$("gm-def-wrap").hidden && $("gm-default").checked) { const s = await call("save_settings", {quick_dest: dest}); if (s.ok) S.settings = s.settings; }
+    overlay.remove();
+    F.sel.clear(); if (S.page === "files") renderFiles();
+    toast(r.queued_behind ? `Queued behind ${r.queued_behind}` : mode() === "move" ? "Moving now" : "Download started", "ok", {label: "Show progress", go: "dashboard"});
+    poll();
+  });
+  label();
+  refresh();
+  go.focus();
+}
 
 // -------------------------------------------------------------------------------------------------- history
 async function loadHistory() {
   const jobs = await api.list_jobs();
   S.jobs = jobs.jobs || [];
-  $("history-job").innerHTML = `<option value="">All jobs</option>` + S.jobs.map(j => `<option value="${esc(j.id)}" ${j.id === S.historyJob ? "selected" : ""}>${esc(j.name)}</option>`).join("");
+  $("history-job").innerHTML = `<option value="">Everything</option><option value="quick" ${S.historyJob === "quick" ? "selected" : ""}>Manual downloads</option>` + S.jobs.map(j => `<option value="${esc(j.id)}" ${j.id === S.historyJob ? "selected" : ""}>${esc(j.name)}</option>`).join("");
   const r = await api.history(150, 0, S.historyJob);
   const runs = r.runs || [];
   $("history-table").innerHTML = runs.length ? `<table><thead><tr><th>Started</th><th>Job</th><th>Result</th><th class="num">Files</th><th class="num">Size</th><th class="num">Avg speed</th><th class="num">Time</th><th>How</th></tr></thead><tbody>${runs.map(run => `
     <tr class="click" data-runid="${run.id}"><td>${fmtTime(run.started)}</td><td>${esc(run.job_name)} ${run.dry_run ? '<span class="badge">dry</span>' : ""}</td><td>${badge(run.state)}</td>
-    <td class="num">${run.files}</td><td class="num">${fmtBytes(run.bytes)}</td><td class="num">${run.avg_speed ? fmtSpeed(run.avg_speed) : "-"}</td><td class="num">${duration(run)}</td><td class="muted">${esc(run.trigger)}</td></tr>`).join("")}</tbody></table>` : '<div class="empty">No runs yet.</div>';
+    <td class="num">${run.files}</td><td class="num">${fmtBytes(run.bytes)}</td><td class="num">${run.avg_speed ? fmtSpeed(run.avg_speed) : "-"}</td><td class="num">${duration(run)}</td><td class="muted">${esc(TRIGGER[run.trigger] || run.trigger)}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">${ic("inbox")}No runs yet.</div>`;
 }
 $("history-job").addEventListener("change", event => { S.historyJob = event.target.value; loadHistory(); });
 $("history-table").addEventListener("click", event => { const row = event.target.closest("[data-runid]"); if (row) openRun(Number(row.dataset.runid)); });
@@ -352,8 +546,8 @@ async function openRun(id) {
   const [detail, log] = await Promise.all([api.run_detail(id), api.run_log(id, 600)]);
   if (!detail.ok) return;
   const run = detail.run;
-  const overlay = modal(`<div class="modal-head"><h2>${esc(run.job_name)} ${badge(run.state)}</h2><button class="close" data-close>&times;</button></div>
-    <div class="kv"><span>${fmtTime(run.started)} &rarr; ${fmtTime(run.finished)} (${duration(run) || "-"})</span><span>${esc(run.trigger)}</span><span>${run.mode}</span><span>${run.files} file(s), ${fmtBytes(run.bytes)}</span>${run.deleted ? `<span>${run.deleted} deleted on Nextcloud</span>` : ""}${run.errors ? `<span>${run.errors} error(s)</span>` : ""}</div>
+  const overlay = modal(`<div class="modal-head"><h2>${esc(run.job_name)} ${badge(run.state)}</h2><button class="close" data-close aria-label="Close">${ic("x")}</button></div>
+    <div class="kv"><span>${fmtTime(run.started)} &rarr; ${fmtTime(run.finished)} (${duration(run) || "-"})</span><span>${esc(TRIGGER[run.trigger] || run.trigger)}</span><span>${run.mode === "move" ? "Move" : "Download"}</span><span>${run.files} file(s), ${fmtBytes(run.bytes)}</span>${run.deleted ? `<span>${run.deleted} deleted on Nextcloud</span>` : ""}${run.errors ? `<span>${run.errors} error(s)</span>` : ""}</div>
     <div class="path">/${esc(run.source)} &rarr; ${esc(run.dest)}</div>${run.message ? `<div class="notice ${["failed", "interrupted"].includes(run.state) ? "bad" : "info"}">${esc(run.message)}</div>` : ""}
     <h3>Files</h3><div class="list">${detail.files.length ? `<table><thead><tr><th>Name</th><th class="num">Size</th><th>Result</th><th class="num">Speed</th></tr></thead><tbody>${detail.files.map(f => `<tr><td class="mono">${esc(f.name)}${f.error ? `<div class="hint">${esc(f.error)}</div>` : ""}</td><td class="num">${fmtBytes(f.size)}</td><td>${badge(f.status)}${f.deleted ? ' <span class="badge">deleted on Nextcloud</span>' : ""}${f.status === "ok" && f.error ? ' <span class="badge warn">not deleted on Nextcloud</span>' : ""}</td><td class="num">${f.speed ? fmtSpeed(f.speed) : "-"}</td></tr>`).join("")}</tbody></table>` : '<div class="empty">No files in this run.</div>'}</div>
     <div class="row between"><h3>Log</h3><div class="row"><select id="lg-level" style="width:140px;height:30px"><option value="">All messages</option><option value="warn">Warnings and errors</option><option value="error">Errors only</option></select></div></div>
@@ -420,9 +614,13 @@ async function loadSettings() {
     : `<div class="stack">${login.state === "error" || login.state === "cancelled" ? `<div class="notice bad">${esc(login.message)}</div>` : ""}<label>Nextcloud address<input id="st-server" placeholder="cloud.example.com"></label><div><button class="btn" id="st-connect">Connect with your browser</button></div><div class="hint">You sign in on your Nextcloud page. NextPull only receives an app password (it never sees your real password) and stores it encrypted for this Windows user.</div></div>`;
   const toggle = (id, label, hint, on) => `<label class="check"><input type="checkbox" id="${id}" ${on ? "checked" : ""}><span>${label}<small>${hint}</small></span></label>`;
   $("settings-body").innerHTML = `<div class="card stack"><h2>Nextcloud connection</h2>${connection}</div>
-    <div class="card stack"><div class="row between"><h2>Other servers (SFTPGo / WebDAV)</h2><button class="btn ghost small" id="st-addserver">Add a server</button></div>
+    <div class="card stack"><div class="row between"><h2>Other servers (NextPush, SFTPGo, WebDAV)</h2><button class="btn ghost small" id="st-addserver">Add a server</button></div>
       ${serversHtml(S.conns)}
       <div class="hint">For a server you were given access to with a user name and password. Jobs can pull from it just like from Nextcloud. NextPull only reads and deletes (after a verified copy); it never uploads.</div></div>
+    <div class="card stack"><h2>Downloads</h2>
+      <label>Folder for quick downloads <small>Where "Get now" on the Files page puts files, unless you pick another folder in the dialog. Empty = the folder of your first job, else Downloads\\NextPull.</small><div class="row nowrap"><input id="st-qdest" value="${esc(st.quick_dest)}" placeholder="D:\\Downloads\\NextPull"><button class="btn ghost" id="st-qpick" type="button">Choose...</button></div></label>
+      ${toggle("st-paused", "Pause all scheduled downloads", "Nothing runs on its own while this is on (holiday, maintenance). Get now and Run now still work.", st.paused)}</div>
+    <div class="card stack"><h2>Appearance</h2><div class="seg" id="st-theme" role="group" aria-label="Colour theme">${[["system", "Same as Windows"], ["light", "Light"], ["dark", "Dark"]].map(([v, l]) => `<button type="button" data-theme="${v}" class="${(st.theme || "system") === v ? "on" : ""}">${l}</button>`).join("")}</div></div>
     <div class="card stack"><h2>Behaviour</h2>
       ${toggle("st-tray", "Keep running in the tray when the window is closed", "Downloads continue in the background. Use Quit from the tray menu to stop NextPull.", st.close_to_tray)}
       ${toggle("st-notify", "Windows notifications", "When a run transfers files or fails.", st.notifications)}
@@ -532,10 +730,13 @@ function wireSettings() {
   document.querySelectorAll("[data-srv-del]").forEach(b => b.addEventListener("click", async () => { if (!await ask("Remove this server? Its saved password is deleted.", "Remove", true)) return; const r = await call("remove_connection", b.dataset.srvDel); if (r.ok) { toast("Removed", "ok"); loadSettings(); } }));
   const on = (id, fn, evt = "click") => { const el = $(id); if (el) el.addEventListener(evt, fn); };
   const save = async () => {
-    const r = await call("save_settings", {close_to_tray: $("st-tray").checked, notifications: $("st-notify").checked, prevent_sleep: $("st-sleep").checked, rclone_path: $("st-rpath").value, history_days: Number($("st-hdays").value), log_days: Number($("st-ldays").value), check_updates: $("st-updates").checked});
+    const r = await call("save_settings", {close_to_tray: $("st-tray").checked, notifications: $("st-notify").checked, prevent_sleep: $("st-sleep").checked, rclone_path: $("st-rpath").value, quick_dest: $("st-qdest").value.trim(), history_days: Number($("st-hdays").value), log_days: Number($("st-ldays").value), check_updates: $("st-updates").checked});
     if (r.ok) S.settings = r.settings;
   };
-  ["st-tray", "st-notify", "st-sleep", "st-hdays", "st-ldays", "st-updates"].forEach(id => on(id, save, "change"));
+  ["st-tray", "st-notify", "st-sleep", "st-hdays", "st-ldays", "st-updates", "st-qdest"].forEach(id => on(id, save, "change"));
+  on("st-qpick", async () => { const r = await call("pick_folder", $("st-qdest").value); if (r.ok && r.path) { $("st-qdest").value = r.path; save(); } });
+  on("st-paused", async () => { const r = await call("set_paused", $("st-paused").checked); if (!r.ok) $("st-paused").checked = !$("st-paused").checked; else { S.settings.paused = r.paused; poll(); } }, "change");
+  document.querySelectorAll("#st-theme [data-theme]").forEach(b => b.addEventListener("click", async () => { const r = await call("save_settings", {theme: b.dataset.theme}); if (r.ok) { S.settings = r.settings; applyTheme(r.settings.theme); document.querySelectorAll("#st-theme button").forEach(x => x.classList.toggle("on", x === b)); } }));
   on("st-rpath", async () => { await save(); loadSettings(); }, "change");
   on("st-rcheck", async () => { await save(); loadSettings(); });
   on("st-autostart", async () => { const r = await call("set_autostart", $("st-autostart").checked); if (!r.ok) $("st-autostart").checked = !$("st-autostart").checked; }, "change");
@@ -627,6 +828,7 @@ async function start() {
   api = window.pywebview.api;
   const boot = await api.bootstrap();
   S.boot = boot;
+  applyTheme((boot.settings || {}).theme);
   await loadConns();
   $("foot-version").textContent = `Version ${(boot.app || {}).version || ""}`;
   $("brand-version").textContent = `v${(boot.app || {}).version || ""}`;

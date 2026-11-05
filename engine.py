@@ -19,6 +19,7 @@ import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable
+from uuid import uuid4
 
 import applog
 from rclone_runner import RcloneRun
@@ -89,11 +90,16 @@ class Engine:
             last = now
         if last > now:   # the clock went backwards (manual change, DST): never replay the future
             last = now
+        paused = bool(self.config.settings().get("paused"))
         for job in self.config.jobs():
             if not job["enabled"]:
                 continue
             slots = due_slots(job["schedule"], last, now)
             if not slots:
+                continue
+            if paused:   # the user paused every schedule (holiday, maintenance): the hole stays visible in History and nothing runs late afterwards
+                for old in slots:
+                    self.history.record_skipped(job, old, "skipped", "Skipped: scheduled downloads were paused")
                 continue
             if len(slots) > 1 or (now - last).total_seconds() > 3 * self.tick_seconds:
                 _log.warning("%s: tick gap of %ds (app asleep or closed?), %d slot(s) due", job["name"], (now - last).total_seconds(), len(slots))
@@ -133,6 +139,17 @@ class Engine:
         self._dispatch()
         return {"ok": True, "queued_behind": queued_behind}
 
+    def fetch_now(self, jobs: list[dict[str, Any]]) -> dict[str, Any]:
+        """Queue one-off downloads the user asked for on the Files page (not scheduled, not saved). Each ``job`` is a complete job dict
+        built by :func:`quick.quick_jobs`; they wait in the same queue as scheduled runs, one run at a time, and are recorded in History
+        under the job id ``quick``. They ignore the pause switch: the user clicked."""
+        queued_behind = self._current_item["job_name"] if self._current_item else ""
+        with self._lock:
+            for job in jobs:
+                self._queue.append({"job_id": f"quick-{uuid4().hex[:8]}", "job_name": job["name"], "trigger": "quick", "slot": self.clock(), "dry_run": None, "job": job})
+        self._dispatch()
+        return {"ok": True, "queued": len(jobs), "queued_behind": queued_behind}
+
     def _dispatch(self) -> None:
         with self._lock:
             if self._current_item or not self._queue or self._stop.is_set():
@@ -144,7 +161,7 @@ class Engine:
 
     # execution
     def _execute(self, item: dict[str, Any]) -> None:
-        job = self.config.job(item["job_id"])
+        job = item.get("job") or self.config.job(item["job_id"])
         result: dict[str, Any] = {"state": "failed", "message": "", "files": 0, "bytes": 0}
         try:
             if not job:
@@ -169,7 +186,7 @@ class Engine:
                 self.history.finish_run(run_id, "failed", "rclone was not found. Put rclone.exe in the tools folder or set its path in Settings.")
                 result["message"] = "rclone was not found"
                 return
-            deadline = window_end(job["schedule"], item["slot"]) if item["trigger"] != "manual" else None
+            deadline = window_end(job["schedule"], item["slot"]) if item["trigger"] not in ("manual", "quick") else None
             run = self.run_factory(rclone=rclone, job=job, creds=creds, run_id=run_id, history=self.history, log_path=log_path, config_path=self.config_path,
                                    deadline=deadline, keep_awake=self.config.settings()["prevent_sleep"], clock=self.clock)
             with self._lock:

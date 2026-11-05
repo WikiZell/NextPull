@@ -26,6 +26,7 @@ import applog
 import connections
 import diagnostics
 import installer
+import quick
 import updates
 import winutil
 from engine import Engine
@@ -34,7 +35,7 @@ from rclone_runner import RcloneError, find_rclone, rclone_version
 from scheduler import describe_schedule
 from store import ConfigStore, HistoryDb, SecretStore, new_job_id
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 APP_NAME = "NextPull"
 DATA_DIR = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local") / APP_NAME
 LOGIN_TIMEOUT = 20 * 60
@@ -306,6 +307,7 @@ class NextPullApi:
         status["connected"] = self._secrets.connected() or bool(self._secrets.connections())
         status["nextcloud_connected"] = self._secrets.connected()
         status["rclone_found"] = self._find_rclone() is not None
+        status["paused"] = bool(self._config.settings().get("paused"))
         status["events"] = self._engine.events()[:25]
         view = self._update_view()
         status["update"] = {"version": view["latest"]["version"], "installable": view["latest"]["installable"], "can_install": view["latest"]["can_install"]} if view["enabled"] and view["available"] and not view["skipped"] else None
@@ -480,6 +482,116 @@ class NextPullApi:
     @safe
     def run_job(self, job_id: str, dry_run: bool | None = None) -> dict[str, Any]:
         return self._engine.run_now(job_id, dry_run)
+
+    # --------------------------------------------------------------------------------------------- dashboard
+    @safe
+    def dashboard(self) -> dict[str, Any]:
+        """Everything the Dashboard shows besides the live status: totals, the last 14 days, recent files, free disk space."""
+        now = datetime.now()
+        stats = self._history.stats(30)
+        daily = stats["daily"][-14:]
+        today = daily[-1] if daily else {"bytes": 0, "files": 0}
+        week = {"bytes": sum(day["bytes"] for day in daily[-7:]), "files": sum(day["files"] for day in daily[-7:])}
+        disks: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for label, path in [("Quick downloads", self._config.settings().get("quick_dest") or ""), *[(job["name"], job["dest"]) for job in self._config.jobs() if job.get("enabled")]]:
+            if not path:
+                continue
+            free = winutil.free_bytes(path)
+            drive = Path(path).anchor or path
+            if free is None or drive.lower() in seen:
+                continue
+            seen.add(drive.lower())
+            total = None
+            try:
+                total = shutil.disk_usage(drive).total
+            except OSError:
+                pass
+            disks.append({"drive": drive, "free_bytes": free, "total_bytes": total, "for": label})
+        return {"ok": True, "totals": stats["totals"], "daily": daily, "today": {"bytes": today["bytes"], "files": today["files"]}, "week": week,
+                "recent": self._history.recent_files(8), "disks": disks, "paused": bool(self._config.settings().get("paused")), "now": now.isoformat(timespec="seconds")}
+
+    @safe
+    def set_paused(self, paused: bool) -> dict[str, Any]:
+        """Pause or resume every scheduled run at once (holiday, maintenance). Quick downloads and 'Run now' still work."""
+        self._config.save_settings({**self._config.settings(), "paused": bool(paused)})
+        _log.info("scheduled downloads %s", "paused" if paused else "resumed")
+        return {"ok": True, "paused": bool(paused)}
+
+    @safe
+    def server_health(self, force: bool = False) -> dict[str, Any]:
+        """Is each connected server reachable right now (and how fast does it answer)? Cached for a minute so the Dashboard can ask freely."""
+        cached = getattr(self, "_health", None)
+        if cached and not force and time.monotonic() - cached[0] < 60:
+            return {"ok": True, "servers": cached[1]}
+        servers: list[dict[str, Any]] = []
+        records = []
+        if self._secrets.connected():
+            records.append({"id": "nextcloud", "label": "Nextcloud"})
+        records += [{"id": rec["id"], "label": rec.get("label") or rec["id"]} for rec in self._secrets.connections()]
+        for rec in records:
+            started = time.monotonic()
+            try:
+                self._session(rec["id"]).check_folder("")
+                servers.append({**rec, "ok": True, "ms": int((time.monotonic() - started) * 1000), "error": ""})
+            except (NextcloudError, ValueError, OSError) as error:
+                servers.append({**rec, "ok": False, "ms": None, "error": str(error)})
+        self._health = (time.monotonic(), servers)
+        return {"ok": True, "servers": servers}
+
+    # ------------------------------------------------------------------------------------------ quick downloads
+    def _default_quick_dest(self, connection: str = "") -> str:
+        """Where a one-off download goes unless the user picks another folder: the folder set in Settings, else the destination of a job
+        that pulls from the same connection (that is where the PC's owner already expects these files), else Downloads\\NextPull."""
+        chosen = self._config.settings().get("quick_dest")
+        if chosen:
+            return chosen
+        jobs = self._config.jobs()
+        same = [job for job in jobs if (job.get("connection") or "nextcloud") == (connection or "nextcloud")]
+        for job in [*same, *jobs]:
+            if job.get("dest"):
+                return job["dest"]
+        return str(Path.home() / "Downloads" / APP_NAME)
+
+    def _move_check(self, connection: str, items: list[dict[str, Any]] | None) -> dict[str, Any]:
+        """Can this login also delete what it downloads? Only NextPush says so; for every other server the answer is "unknown" (Move stays available and,
+        if the server refuses the delete, the file is still downloaded and the run says so)."""
+        creds = self._secrets.creds_for(connection or "nextcloud")
+        if not creds or creds.get("type") != connections.SFTPGO:
+            return {"known": False, "allowed": True, "blocked": []}
+        try:
+            me = self._session(connection).nextpush_me()
+        except (NextcloudError, ValueError, OSError):
+            me = None
+        if not me or not me["folders"]:
+            return {"known": False, "allowed": True, "blocked": []}
+        blocked = sorted({str(item.get("path") or "").strip("/").split("/", 1)[0] for item in (items or []) if me["folders"].get(str(item.get("path") or "").strip("/").split("/", 1)[0]) == "read"})
+        return {"known": True, "allowed": not blocked, "blocked": [name for name in blocked if name]}
+
+    @safe
+    def quick_info(self, connection: str = "nextcloud", items: list[dict[str, Any]] | None = None, dest: str = "") -> dict[str, Any]:
+        """What the 'Get now' dialog needs: the folder to suggest, its free space, and the picked files that already exist there."""
+        target = str(dest or "").strip() or self._default_quick_dest(connection)
+        info = self.test_destination(target)
+        conflicts = quick.find_conflicts(target, quick.clean_items(items)) if items else []
+        return {"ok": True, "dest": target, "exists": info.get("exists", False), "writable": info.get("writable", False), "free_bytes": info.get("free_bytes"), "conflicts": conflicts,
+                "default_dest": self._default_quick_dest(connection), "move": self._move_check(connection, items)}
+
+    @safe
+    def fetch_now(self, connection: str, items: list[dict[str, Any]], mode: str, dest: str, on_conflict: str = "replace") -> dict[str, Any]:
+        """Download (``copy``) or move picked files/folders right now, outside every schedule. Queued behind a running download."""
+        if not self._secrets.creds_for(connection or "nextcloud"):
+            raise ValueError("That server is not connected any more. Open Settings and connect again.")
+        if not self._find_rclone():
+            raise ValueError("rclone was not found. Put rclone.exe in the tools\\rclone folder next to NextPull, or set its path in Settings.")
+        if str(mode).lower() == "move":
+            check = self._move_check(connection, items)
+            if not check["allowed"]:
+                raise ValueError(f"Your account can only download from {', '.join(check['blocked'])}; it is not allowed to remove files there. Choose Download instead.")
+        backup_root = (self._data_dir / "replaced") if self._data_dir else None
+        jobs = quick.quick_jobs(connection or "nextcloud", items, mode, dest, on_conflict, backup_root)
+        _log.info("quick download: %d run(s) queued (%s) from %s", len(jobs), mode, connection)
+        return self._engine.fetch_now(jobs)
 
     @safe
     def cancel_run(self) -> dict[str, Any]:

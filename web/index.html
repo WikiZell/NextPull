@@ -7,51 +7,93 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="i-dash" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></symbol>
+    <symbol id="i-jobs" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></symbol>
+    <symbol id="i-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></symbol>
+    <symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M18 17V9M13 17V5M8 17v-3"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4M12 17h.01"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M6 3l14 9-14 9z"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+    <symbol id="i-server" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/></symbol>
+    <symbol id="i-disk" viewBox="0 0 24 24"><path d="M22 12H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><path d="M6 16h.01M10 16h.01"/></symbol>
+    <symbol id="i-move" viewBox="0 0 24 24"><path d="m16 3 4 4-4 4"/><path d="M20 7H4"/><path d="m8 21-4-4 4-4"/><path d="M4 17h16"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+    <symbol id="i-open" viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></symbol>
+    <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14M12 5v14"/></symbol>
+    <symbol id="i-arrow-up" viewBox="0 0 24 24"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></symbol>
+  </defs>
+</svg>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><span class="mark">&#8681;</span><span>NextPull<small id="brand-version"></small></span></div>
-    <nav id="nav">
-      <button class="nav active" data-page="dashboard"><span class="ic">&#9673;</span>Dashboard</button>
-      <button class="nav" data-page="jobs"><span class="ic">&#9776;</span>Jobs</button>
-      <button class="nav" data-page="files"><span class="ic">&#128193;</span>Files</button>
-      <button class="nav" data-page="history"><span class="ic">&#9202;</span>History</button>
-      <button class="nav" data-page="stats"><span class="ic">&#9636;</span>Statistics</button>
-      <button class="nav" data-page="diagnostics"><span class="ic">&#9888;</span>Problems<span class="count" id="nav-problems" hidden></span></button>
-      <button class="nav" data-page="settings"><span class="ic">&#9881;</span>Settings</button>
+    <div class="brand"><span class="mark"><svg class="i"><use href="#i-download"/></svg></span><span>NextPull<small id="brand-version"></small></span></div>
+    <nav id="nav" aria-label="Main">
+      <button class="nav active" data-page="dashboard"><svg class="i"><use href="#i-dash"/></svg>Dashboard</button>
+      <button class="nav" data-page="files"><svg class="i"><use href="#i-folder"/></svg>Files</button>
+      <button class="nav" data-page="jobs"><svg class="i"><use href="#i-jobs"/></svg>Jobs</button>
+      <button class="nav" data-page="history"><svg class="i"><use href="#i-history"/></svg>History</button>
+      <button class="nav" data-page="stats"><svg class="i"><use href="#i-chart"/></svg>Statistics</button>
+      <button class="nav" data-page="diagnostics"><svg class="i"><use href="#i-alert"/></svg>Problems<span class="count" id="nav-problems" hidden></span></button>
+      <button class="nav" data-page="settings"><svg class="i"><use href="#i-gear"/></svg>Settings<span class="count dotcount" id="nav-update" hidden title="An update is available"></span></button>
     </nav>
     <div class="side-foot">
+      <div id="foot-paused" class="pill warn" hidden><svg class="i"><use href="#i-pause"/></svg>Schedules paused</div>
       <div id="foot-conn"><span class="dot"></span>Not connected</div>
       <div id="foot-rclone"><span class="dot"></span>rclone</div>
       <div id="foot-version" class="muted"></div>
-      <div class="credit">Made by Ren&eacute; Girardi</div>
-      <div class="credit">Powered by rclone</div>
+      <div class="credit">Made by Ren&eacute; Girardi &middot; Powered by rclone</div>
     </div>
   </aside>
-  <main>
+  <main id="main">
     <section id="page-dashboard" class="page">
-      <div class="page-head"><div><h1>Dashboard</h1><p>What is downloading now and what runs next.</p></div></div>
       <div class="stack">
-        <div id="dash-notice"></div>
-        <div class="card" id="dash-now"></div>
+        <div id="dash-notice" class="stack tight"></div>
+        <div class="card hero" id="dash-now"></div>
         <div class="grid cols-4" id="dash-tiles"></div>
-        <div class="card"><div class="row between"><h2>Scheduled jobs</h2><button class="btn ghost small" data-goto="jobs">Manage jobs</button></div><div id="dash-jobs"></div></div>
-        <div class="card"><h2>Recent activity</h2><div id="dash-events"></div></div>
+        <div class="grid cols-2-1">
+          <div class="card"><div class="row between"><h2>Last 14 days</h2><span class="hint" id="dash-chart-note"></span></div><div id="dash-chart"></div></div>
+          <div class="card"><div class="row between"><h2>Servers</h2><button class="icon-btn" id="dash-health-refresh" title="Check again" aria-label="Check the servers again"><svg class="i"><use href="#i-refresh"/></svg></button></div><div id="dash-servers"></div></div>
+        </div>
+        <div class="grid cols-2">
+          <div class="card"><div class="row between"><h2>Recently downloaded</h2><button class="btn ghost small" data-goto="history">All history</button></div><div id="dash-recent"></div></div>
+          <div class="card"><div class="row between"><h2>Scheduled jobs</h2><button class="btn ghost small" data-goto="jobs">Manage jobs</button></div><div id="dash-jobs"></div></div>
+        </div>
+        <details class="card fold"><summary><h2>Activity</h2></summary><div id="dash-events"></div></details>
       </div>
     </section>
 
     <section id="page-jobs" class="page" hidden>
-      <div class="page-head"><div><h1>Jobs</h1><p>Each job downloads one Nextcloud folder to a folder on this PC on a schedule.</p></div><button class="btn" id="job-new">+ New job</button></div>
+      <div class="page-head"><div><h1>Jobs</h1><p>A job downloads one server folder to a folder on this PC, on a schedule.</p></div><button class="btn" id="job-new"><svg class="i"><use href="#i-plus"/></svg>New job</button></div>
       <div class="stack" id="jobs-list"></div>
     </section>
 
     <section id="page-files" class="page" hidden>
-      <div class="page-head"><div><h1>Files</h1><p>Browse the folders of a connected server. Nothing is downloaded or deleted from here.</p></div><div class="row"><label id="files-conn-wrap" hidden style="min-width:200px">Connection<select id="files-conn"></select></label><button class="btn" id="files-make-job">Create job from this folder</button></div></div>
-      <div class="card stack"><div class="crumbs" id="files-crumbs"></div><div class="list" id="files-list"></div></div>
+      <div class="page-head"><div><h1>Files</h1><p>Look at what is on the server and get a file right now, without waiting for a schedule.</p></div><div class="row"><label id="files-conn-wrap" hidden class="inline">Server<select id="files-conn"></select></label><button class="btn ghost" id="files-make-job"><svg class="i"><use href="#i-jobs"/></svg>Make a job from this folder</button></div></div>
+      <div class="card files-card">
+        <div class="files-bar"><div class="crumbs" id="files-crumbs"></div>
+          <div class="row nowrap"><label class="search"><svg class="i"><use href="#i-search"/></svg><input id="files-filter" type="search" placeholder="Filter this folder" aria-label="Filter this folder" autocomplete="off"></label>
+            <select id="files-sort" aria-label="Sort by"><option value="name">Name</option><option value="new">Newest first</option><option value="size">Largest first</option></select>
+            <button class="icon-btn" id="files-refresh" title="Refresh" aria-label="Refresh the list"><svg class="i"><use href="#i-refresh"/></svg></button></div></div>
+        <div class="list files" id="files-list" role="list"></div>
+      </div>
+      <div class="selbar" id="files-selbar" hidden><div><b id="sel-count"></b><span class="muted" id="sel-size"></span></div><div class="row"><button class="btn ghost" id="sel-clear">Clear</button><button class="btn" id="sel-get"><svg class="i"><use href="#i-download"/></svg>Get now</button></div></div>
     </section>
 
     <section id="page-history" class="page" hidden>
-      <div class="page-head"><div><h1>History</h1><p>Every run, including missed and skipped ones.</p></div><label style="min-width:200px">Job<select id="history-job"></select></label></div>
-      <div class="card"><div id="history-table"></div></div>
+      <div class="page-head"><div><h1>History</h1><p>Every run, including missed and skipped ones.</p></div><label class="inline">Show<select id="history-job"></select></label></div>
+      <div class="card flush"><div id="history-table"></div></div>
     </section>
 
     <section id="page-stats" class="page" hidden>
@@ -65,13 +107,13 @@
     </section>
 
     <section id="page-settings" class="page" hidden>
-      <div class="page-head"><div><h1>Settings</h1><p>Connection, behaviour and maintenance.</p></div></div>
+      <div class="page-head"><div><h1>Settings</h1><p>Servers, behaviour and maintenance.</p></div></div>
       <div class="stack" id="settings-body"></div>
     </section>
   </main>
 </div>
 <div id="modals"></div>
-<div class="toasts" id="toasts"></div>
+<div class="toasts" id="toasts" role="status" aria-live="polite"></div>
 <script src="app.js"></script>
 </body>
 </html>

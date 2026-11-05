@@ -326,5 +326,25 @@ class WebdavSession(NextcloudSession):
         self.list_dir("")
         return {"id": self.user, "display_name": self.user, "email": "", "quota_used": None, "quota_total": None}
 
+    def nextpush_me(self) -> dict[str, Any] | None:
+        """NextPush (our own file server) can say which of my folders also allow deleting after the copy, so the app can explain *Move* before the user
+        tries it. ``{"folders": {name: "pull" | "read"}, "can_delete": bool | None}``, or None for any other server or when it cannot tell."""
+        parts = urllib.parse.urlsplit(self.server)
+        path = parts.path.rstrip("/")
+        url = f"{parts.scheme}://{parts.netloc}{path.rsplit('/', 1)[0] if path else ''}/.well-known/nextpush/me"
+        try:
+            status, _, body = _request("GET", url, headers=self._auth, timeout=min(self.timeout, 10.0), noun="server")
+        except NextcloudError:
+            return None
+        if status != 200:
+            return None
+        try:
+            data = json.loads(body.decode("utf-8"))
+            folders = {str(item["name"]): str(item["mode"]) for item in data["folders"]}
+            can_delete = data.get("can_delete")
+        except (ValueError, KeyError, TypeError, AttributeError):
+            return None
+        return {"folders": folders, "can_delete": can_delete if isinstance(can_delete, bool) else None}
+
     def revoke(self) -> bool:
         return False

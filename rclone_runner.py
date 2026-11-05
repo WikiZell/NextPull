@@ -140,6 +140,10 @@ def build_args(job: dict[str, Any], *, config_path: Path, rc_port: int, rc_pass:
         args += ["--bwlimit", limit]
     if job["mode"] == "move" and job["delete_empty_dirs"] and remove_empty_dirs:
         args.append("--delete-empty-src-dirs")
+    if job.get("backup_dir"):   # a quick download that replaces a file: the old copy is moved here, never destroyed
+        args += ["--backup-dir", str(job["backup_dir"])]
+    if job.get("ignore_existing"):
+        args.append("--ignore-existing")
     if job["checksum"]:
         args.append("--checksum")
     if job["dry_run"]:
